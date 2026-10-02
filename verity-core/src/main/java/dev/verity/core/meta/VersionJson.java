@@ -64,7 +64,7 @@ public class VersionJson {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class LoggingEntry {
         public String argument;
-        public DownloadInfo file;
+        public FileRef file;
         public String type;
     }
 
