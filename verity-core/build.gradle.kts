@@ -6,10 +6,11 @@ description = "Verity engine: metadata, installers, launching, orchestration, re
 
 dependencies {
     api(libs.jackson.databind)
+    api(libs.jackson.jsr310)
     implementation(libs.jackson.toml)
     implementation(libs.commons.compress)
     implementation(libs.xz)
     implementation(libs.jna)
     implementation(libs.jna.platform)
-    testImplementation(project(":verity-api"))
+    implementation(project(":verity-api"))
 }

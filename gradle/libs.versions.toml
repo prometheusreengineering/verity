@@ -11,6 +11,7 @@ assertj = "3.27.7"
 
 [libraries]
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }
 jackson-toml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-toml", version.ref = "jackson" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 atlantafx = { module = "io.github.mkpaz:atlantafx-base", version.ref = "atlantafx" }

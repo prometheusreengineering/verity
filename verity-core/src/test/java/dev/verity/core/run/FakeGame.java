@@ -1,0 +1,47 @@
+package dev.verity.core.run;
+
+import dev.verity.api.Verity;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+/** Pretends to be Minecraft: behaves according to the version name it is launched with. */
+public class FakeGame {
+    public static void main(String[] args) throws Exception {
+        String version = "";
+        String gameDir = ".";
+        for (int i = 0; i < args.length - 1; i++) {
+            if (args[i].equals("--version")) version = args[i + 1];
+            if (args[i].equals("--gameDir")) gameDir = args[i + 1];
+        }
+        System.out.println("Fake game " + version + " starting, user.home=" + System.getProperty("user.home"));
+        System.out.println("<log4j:Event logger=\"net.minecraft.client.Minecraft\" timestamp=\"1700000000000\" level=\"INFO\" thread=\"Render thread\">");
+        System.out.println("  <log4j:Message><![CDATA[Setting user: Verity]]></log4j:Message>");
+        System.out.println("</log4j:Event>");
+        switch (version) {
+            case "fake-pass" -> {
+                Verity.test("mods-dir-exists", () -> {
+                    if (!Files.isDirectory(Path.of("mods"))) throw new AssertionError("no mods dir");
+                });
+                Verity.pass("loaded");
+                Verity.log("hello from " + Verity.target());
+                Verity.attach("note.txt", "attached".getBytes());
+                Verity.finish();
+                Thread.sleep(60_000);
+            }
+            case "fake-fail" -> {
+                Verity.pass("loaded");
+                Verity.fail("patched", "class was not transformed");
+                Verity.finish();
+                Thread.sleep(60_000);
+            }
+            case "fake-crash" -> {
+                Verity.pass("loaded");
+                Path crash = Path.of(gameDir, "crash-reports", "crash-2026-01-01_00.00.00-client.txt");
+                Files.createDirectories(crash.getParent());
+                Files.writeString(crash, "---- Minecraft Crash Report ----\n\nDescription: Initializing game\n\njava.lang.NoSuchMethodError: foo\n");
+                System.exit(-1);
+            }
+            default -> System.exit(0); // exits without finish
+        }
+    }
+}
