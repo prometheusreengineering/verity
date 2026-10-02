@@ -15,6 +15,8 @@ import java.util.TreeSet;
 
 /** A self-contained HTML page: version × loader matrix, then per-target details with checks and log tails. */
 public final class HtmlReport {
+    private static final java.time.format.DateTimeFormatter TIME =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(java.time.ZoneId.systemDefault());
     private HtmlReport() {
     }
 
@@ -42,7 +44,7 @@ public final class HtmlReport {
                 """);
         b.append("<h1>").append(h(r.profile)).append("</h1>");
         long secs = r.startedAt != null && r.finishedAt != null ? Duration.between(r.startedAt, r.finishedAt).toSeconds() : 0;
-        b.append("<div class=\"muted\">").append(r.startedAt == null ? "" : h(r.startedAt.toString())).append(" · ")
+        b.append("<div class=\"muted\">").append(r.startedAt == null ? "" : h(TIME.format(r.startedAt))).append(" · ")
                 .append(secs / 60).append("m ").append(secs % 60).append("s · ").append(h(r.host)).append("</div>");
 
         b.append("<div class=\"summary\">");
@@ -85,7 +87,7 @@ public final class HtmlReport {
         for (TargetResult t : r.results) {
             b.append("<details id=\"").append(h(t.id)).append("\"").append(t.success() ? "" : " open").append("><summary><span class=\"s ")
                     .append(t.status).append("\">").append(label(t.status)).append("</span> ").append(h(t.id))
-                    .append(" <span class=\"muted\">").append(t.durationMs / 1000).append("s</span></summary>");
+                    .append(" <span class=\"muted\">").append(String.format(Locale.ROOT, "%.1fs", t.durationMs / 1000.0)).append("</span></summary>");
             if (t.message != null) b.append("<p>").append(h(t.message)).append("</p>");
             b.append("<p class=\"muted\">Loader ").append(h(t.loader)).append(" ").append(h(t.loaderVersion == null ? "" : t.loaderVersion))
                     .append(t.java != null ? " · Java " + h(t.java) : "").append(t.display != null ? " · " + h(t.display) : "")
