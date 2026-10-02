@@ -115,6 +115,8 @@ runs:
         JAR: ${{ steps.jar.outputs.path }}
       run: |
         report="$(mkdir -p "$REPORT_DIR" && cd "$REPORT_DIR" && pwd)"
+        # Git Bash on Windows prints /d/a/...; actions and Java need D:\a\...
+        if [ "$RUNNER_OS" = "Windows" ]; then report="$(cygpath -w "$report")"; fi
         echo "report-dir=$report" >> "$GITHUB_OUTPUT"
         args=(run "$PROFILE" --report-dir "$report")
         [ -n "$ONLY" ] && args+=(--only "$ONLY")
@@ -132,6 +134,7 @@ runs:
       shell: bash
       env:
         REPORT: ${{ steps.run.outputs.report-dir }}
+        PYTHONIOENCODING: utf-8
       run: python3 "${{ github.action_path }}/.github/scripts/summary.py" "$REPORT/report.json"
 
     - name: Upload reports

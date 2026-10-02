@@ -8,6 +8,9 @@ ICONS = {"PASSED": "✅", "PREPARED": "✅", "FAILED": "❌", "CRASHED": "💥",
 
 
 def main(path):
+    # Windows runners default to cp1252, which can't print the status emoji.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     out = os.environ.get("GITHUB_OUTPUT")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if not os.path.exists(path):
