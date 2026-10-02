@@ -32,6 +32,39 @@ public final class ProxyConfig {
         return new EnvSelector(parse(https != null ? https : http), parse(http != null ? http : https), noProxy);
     }
 
+    /**
+     * {@code -D} flags that give a child JVM (Forge installer processors, the game) the same proxy this process
+     * uses, so e.g. Forge's mappings download works behind a CI proxy.
+     */
+    public static java.util.List<String> jvmArgs() {
+        java.util.List<String> out = new ArrayList<>();
+        for (String key : new String[] {"https.proxyHost", "https.proxyPort", "http.proxyHost", "http.proxyPort",
+                "http.nonProxyHosts", "socksProxyHost", "socksProxyPort", "javax.net.ssl.trustStore",
+                "javax.net.ssl.trustStoreType", "javax.net.ssl.trustStorePassword"}) {
+            String v = System.getProperty(key);
+            if (v != null && !v.isEmpty()) out.add("-D" + key + "=" + v);
+        }
+        if (out.stream().noneMatch(a -> a.startsWith("-Dhttps.proxyHost") || a.startsWith("-Dhttp.proxyHost"))) {
+            String https = env("HTTPS_PROXY");
+            String http = env("HTTP_PROXY");
+            if (https != null) {
+                InetSocketAddress a = parse(https);
+                out.add("-Dhttps.proxyHost=" + a.getHostString());
+                out.add("-Dhttps.proxyPort=" + a.getPort());
+            }
+            if (http != null) {
+                InetSocketAddress a = parse(http);
+                out.add("-Dhttp.proxyHost=" + a.getHostString());
+                out.add("-Dhttp.proxyPort=" + a.getPort());
+            }
+            String np = env("NO_PROXY");
+            if (np != null && (https != null || http != null)) {
+                out.add("-Dhttp.nonProxyHosts=" + String.join("|", np.replace(" ", "").replaceAll("(^|,)\\.", "$1*.").split(",")));
+            }
+        }
+        return out;
+    }
+
     private static String env(String name) {
         String v = System.getenv(name);
         if (v == null) v = System.getenv(name.toLowerCase(Locale.ROOT));
