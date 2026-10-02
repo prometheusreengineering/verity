@@ -33,8 +33,8 @@ class LaunchCommandBuilderTest {
     @Test
     void modernFabric() throws Exception {
         List<String> cmd = LaunchCommandBuilder.build(request("fabric-loader-0.16.14-1.20.1"), LINUX);
-        assertThat(cmd.get(0)).isEqualTo("/java/bin/java");
-        assertThat(cmd).contains("-Xmx2048M", "-Dverity.port=1234", "-cp", "/a.jar:/b.jar", "-Dextra=1",
+        assertThat(cmd.get(0)).isEqualTo(Path.of("/java/bin/java").toString());
+        assertThat(cmd).contains("-Xmx2048M", "-Dverity.port=1234", "-cp", Path.of("/a.jar") + ":" + Path.of("/b.jar"), "-Dextra=1",
                 "-DFabricMcEmu= net.minecraft.client.main.Main ", "--width", "854", "--extraGame",
                 "-Djava.library.path=" + tmp.resolve("natives"), "-Dlog4j.configurationFile=" + tmp.resolve("log.xml"));
         assertThat(cmd).doesNotContain("--demo", "-XstartOnFirstThread", "--quickPlayPath");

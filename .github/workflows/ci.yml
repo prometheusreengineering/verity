@@ -52,7 +52,8 @@ jobs:
   e2e:
     name: Minecraft matrix (${{ matrix.os }})
     needs: build
-    if: github.event_name != 'workflow_dispatch' || inputs.e2e
+    # Runs even if only the Windows unit-test leg failed; it uses the jars built on Linux.
+    if: ${{ !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.e2e) }}
     strategy:
       fail-fast: false
       matrix:

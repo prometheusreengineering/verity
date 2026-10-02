@@ -145,7 +145,16 @@ public final class ClientSession {
             InstalledVersion version = installer.install(target.minecraft(), target.loader(), loaderVersion, progress());
             Path java = installer.context().java().javaFor(version, progress());
             if (Os.current() == Os.WINDOWS && display instanceof Win32HiddenDesktop && Win32HiddenDesktop.usesMesa(profile.display)) {
-                java = new MesaGl(installer.context()).javaWithMesa(java, progress());
+                try {
+                    java = new MesaGl(installer.context()).javaWithMesa(java, progress());
+                } catch (Exception e) {
+                    if (profile.display.softwareGl == Profile.SoftwareGl.ON) throw e;
+                    // auto: Mesa is a convenience for GPU-less machines; carry on with the real driver.
+                    String reason = e.getMessage() != null ? e.getMessage() : e.toString();
+                    verityLog.add("Mesa software OpenGL unavailable (" + reason + "); using the GPU driver");
+                    listener.targetLog(target, "[verity] Mesa software OpenGL unavailable (" + reason + "); using the GPU driver");
+                    Files.writeString(reportDir.resolve("mesa-error.txt"), stackTrace(e));
+                }
             }
             result.java = java.toString();
             if (prepareOnly) return finish(Status.PREPARED, "Installed " + version.id(), start);

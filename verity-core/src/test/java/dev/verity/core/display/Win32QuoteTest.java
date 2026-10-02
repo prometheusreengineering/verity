@@ -21,6 +21,6 @@ class Win32QuoteTest {
     @Test
     void xvfbCommand() {
         assertThat(XvfbDisplay.command(Path.of("/usr/bin/Xvfb"), 1280, 800))
-                .containsSubsequence("/usr/bin/Xvfb", "-displayfd", "1", "-screen", "0", "1280x800x24");
+                .containsSubsequence(Path.of("/usr/bin/Xvfb").toString(), "-displayfd", "1", "-screen", "0", "1280x800x24");
     }
 }
