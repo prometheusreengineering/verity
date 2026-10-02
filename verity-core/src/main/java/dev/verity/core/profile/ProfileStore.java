@@ -91,11 +91,24 @@ public final class ProfileStore {
     public Profile importProfile(Path file) throws IOException {
         Profile p = load(file);
         Path base = p.baseDir();
-        for (Profile.ModEntry m : p.mods) if (m.path != null && !Path.of(m.path).isAbsolute()) m.path = base.resolve(m.path).normalize().toString();
-        for (Profile.FileEntry f : p.files) if (f.from != null && !Path.of(f.from).isAbsolute()) f.from = base.resolve(f.from).normalize().toString();
+        for (Profile.ModEntry m : p.mods) if (m.path != null) m.path = absolutize(base, m.path);
+        for (Profile.FileEntry f : p.files) if (f.from != null) f.from = absolutize(base, f.from);
         p.source = null;
         save(p);
         return p;
+    }
+
+    /** Absolute form of a path that may contain glob characters (which {@link Path} rejects on Windows). */
+    public static String absolutize(Path base, String spec) {
+        if (isAbsolute(spec)) return spec;
+        boolean glob = spec.contains("*") || spec.contains("?") || spec.contains("{");
+        if (!glob) return base.resolve(spec).normalize().toString();
+        String b = base.toString().replace('\\', '/');
+        return (b.endsWith("/") ? b : b + "/") + spec.replace('\\', '/');
+    }
+
+    public static boolean isAbsolute(String spec) {
+        return spec.startsWith("/") || spec.startsWith("\\") || spec.matches("^[A-Za-z]:[\\\\/].*");
     }
 
     public static void saveTo(Profile p, Path file) throws IOException {

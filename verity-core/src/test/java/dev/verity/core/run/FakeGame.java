@@ -41,6 +41,7 @@ public class FakeGame {
                 Files.writeString(crash, "---- Minecraft Crash Report ----\n\nDescription: Initializing game\n\njava.lang.NoSuchMethodError: foo\n");
                 System.exit(-1);
             }
+            case "fake-idle" -> Thread.sleep(60_000); // vanilla-like: never talks to Verity
             default -> System.exit(0); // exits without finish
         }
     }

@@ -195,6 +195,12 @@ public class Profile {
         public int timeoutSec = 900;
         /** Seconds to wait for a graceful exit after {@code finish()} before killing. */
         public int shutdownGraceSec = 10;
+        /**
+         * Vanilla cannot load mods, so nothing calls verity-api there: a vanilla client passes once it has run this
+         * long without crashing (unless something, e.g. a {@code -javaagent}, connects through verity-api). 0 = require
+         * the hook on vanilla too.
+         */
+        public int vanillaSmokeSec = 60;
     }
 
     public static class Run {

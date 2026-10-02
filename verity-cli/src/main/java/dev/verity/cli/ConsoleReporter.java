@@ -9,7 +9,6 @@ import dev.verity.core.run.TargetResult;
 import dev.verity.core.report.Reports;
 import java.io.PrintWriter;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -93,7 +92,7 @@ final class ConsoleReporter implements RunListener {
         out.println();
         out.println(ansi.string("@|bold Results|@"));
         for (TargetResult r : report.results) {
-            out.println("  " + colored(r.status) + " " + pad(r.id) + "  " + Duration.ofMillis(r.durationMs).toSeconds() + "s"
+            out.println("  " + colored(r.status) + " " + pad(r.id) + "  " + String.format(java.util.Locale.ROOT, "%6.1fs", r.durationMs / 1000.0)
                     + (r.message != null ? "  " + r.message : ""));
         }
         long total = report.results.size();

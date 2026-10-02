@@ -99,22 +99,23 @@ class RunOrchestratorTest {
         settings.javaOverrides.put(8, System.getProperty("java.home"));
         InstallContext ctx = new InstallContext(home, settings, new Http());
         Path client = clientJar();
-        for (String id : List.of("fake-pass", "fake-fail", "fake-crash", "fake-quit")) seedVersion(home, id, client);
+        for (String id : List.of("fake-pass", "fake-fail", "fake-crash", "fake-quit", "fake-idle")) seedVersion(home, id, client);
 
         Path modJar = TestJars.jar(tmp.resolve("mods/universal.jar"), Map.of("a.txt", "x"));
         Profile p = new Profile();
         p.name = "e2e";
         p.source = tmp.resolve("e2e.json");
         p.mods.add(Profile.ModEntry.of(modJar.toString()));
-        for (String id : List.of("fake-pass", "fake-fail", "fake-crash", "fake-quit")) p.targets.add(Profile.TargetSpec.of(id, LoaderType.VANILLA));
+        for (String id : List.of("fake-pass", "fake-fail", "fake-crash", "fake-quit", "fake-idle")) p.targets.add(Profile.TargetSpec.of(id, LoaderType.VANILLA));
         p.jvm.memoryMb = 512;
         p.test.timeoutSec = 60;
         p.test.startupTimeoutSec = 60;
         p.test.shutdownGraceSec = 1;
+        p.test.vanillaSmokeSec = 4;
 
         RunOptions opts = new RunOptions();
         opts.displayProvider = NO_DISPLAY;
-        opts.maxParallel = 4;
+        opts.maxParallel = 5;
         opts.reportDir = tmp.resolve("report");
         Map<String, Status> last = Collections.synchronizedMap(new HashMap<>());
         List<String> lines = Collections.synchronizedList(new java.util.ArrayList<>());
@@ -155,6 +156,10 @@ class RunOrchestratorTest {
         assertThat(quit.status).isEqualTo(Status.FAILED);
         assertThat(quit.message).contains("before calling Verity.finish()");
 
+        TargetResult idle = byId.get("fake-idle-vanilla");
+        assertThat(idle.status).as(idle.message).isEqualTo(Status.PASSED);
+        assertThat(idle.message).contains("smoke");
+
         assertThat(last).containsEntry("fake-pass-vanilla", Status.PASSED);
         assertThat(lines).anyMatch(l -> l.contains("[Render thread/INFO] (Minecraft): Setting user: Verity"));
         // the sandboxed home is used
@@ -168,6 +173,6 @@ class RunOrchestratorTest {
         javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
                 .parse(new java.io.ByteArrayInputStream(junit.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         assertThat(junit).contains("name=\"patched\"").contains("class was not transformed");
-        assertThat(Reports.read(dir).results).hasSize(4);
+        assertThat(Reports.read(dir).results).hasSize(5);
     }
 }

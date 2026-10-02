@@ -1,0 +1,150 @@
+name: Verity
+description: Launch many Minecraft clients (vanilla, Fabric, Forge, NeoForge) in parallel and test a mod on all of them.
+author: prometheusreengineering
+branding:
+  icon: check-square
+  color: green
+
+inputs:
+  profile:
+    description: Path to a Verity profile JSON (e.g. verity.json in your mod repository).
+    required: true
+  only:
+    description: Comma separated target filters (e.g. "1.20.1-fabric,1.8.9").
+    required: false
+    default: ""
+  parallel:
+    description: Max clients at once (default from the profile, else automatic).
+    required: false
+    default: ""
+  report-dir:
+    description: Where to write report.json, junit.xml, report.html and logs.
+    required: false
+    default: verity-report
+  version:
+    description: Verity release to use (tag, e.g. v0.1.0, or "latest"). Ignored when "jar" is set.
+    required: false
+    default: latest
+  jar:
+    description: Path to a Verity CLI jar to use instead of downloading a release.
+    required: false
+    default: ""
+  cache:
+    description: Cache Minecraft, loaders, libraries and Java runtimes between workflow runs.
+    required: false
+    default: "true"
+  args:
+    description: Extra arguments for "verity run".
+    required: false
+    default: ""
+
+outputs:
+  passed:
+    description: Number of passing targets.
+    value: ${{ steps.summary.outputs.passed }}
+  total:
+    description: Number of targets.
+    value: ${{ steps.summary.outputs.total }}
+  report-dir:
+    description: Absolute path of the report directory.
+    value: ${{ steps.run.outputs.report-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Java for Verity
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "21"
+
+    - name: Install virtual display and software OpenGL (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq xvfb x11-xserver-utils libgl1-mesa-dri libglx-mesa0 mesa-utils > /dev/null
+
+    - name: Restore Verity cache
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ runner.temp }}/verity-home/libraries
+          ${{ runner.temp }}/verity-home/assets
+          ${{ runner.temp }}/verity-home/versions
+          ${{ runner.temp }}/verity-home/runtimes
+          ${{ runner.temp }}/verity-home/installers
+          ${{ runner.temp }}/verity-home/tools
+        key: verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-${{ github.run_id }}
+        restore-keys: |
+          verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-
+          verity-${{ runner.os }}-
+
+    - name: Get Verity
+      id: jar
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        INPUT_JAR: ${{ inputs.jar }}
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        if [ -n "$INPUT_JAR" ]; then
+          echo "path=$INPUT_JAR" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        dest="$RUNNER_TEMP/verity-cli.jar"
+        if [ "$INPUT_VERSION" = "latest" ]; then
+          gh release download --repo prometheusreengineering/verity --pattern 'verity-cli*.jar' --output "$dest" --clobber
+        else
+          gh release download "$INPUT_VERSION" --repo prometheusreengineering/verity --pattern 'verity-cli*.jar' --output "$dest" --clobber
+        fi
+        echo "path=$dest" >> "$GITHUB_OUTPUT"
+
+    - name: Run Verity
+      id: run
+      shell: bash
+      env:
+        VERITY_HOME: ${{ runner.temp }}/verity-home
+        GITHUB_TOKEN: ${{ github.token }}
+        PROFILE: ${{ inputs.profile }}
+        ONLY: ${{ inputs.only }}
+        PARALLEL: ${{ inputs.parallel }}
+        REPORT_DIR: ${{ inputs.report-dir }}
+        EXTRA: ${{ inputs.args }}
+        JAR: ${{ steps.jar.outputs.path }}
+      run: |
+        report="$(mkdir -p "$REPORT_DIR" && cd "$REPORT_DIR" && pwd)"
+        echo "report-dir=$report" >> "$GITHUB_OUTPUT"
+        args=(run "$PROFILE" --report-dir "$report")
+        [ -n "$ONLY" ] && args+=(--only "$ONLY")
+        [ -n "$PARALLEL" ] && args+=(--parallel "$PARALLEL")
+        set +e
+        # shellcheck disable=SC2086
+        java -jar "$JAR" "${args[@]}" $EXTRA
+        code=$?
+        set -e
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+
+    - name: Summarize
+      id: summary
+      if: always()
+      shell: bash
+      env:
+        REPORT: ${{ steps.run.outputs.report-dir }}
+      run: python3 "${{ github.action_path }}/.github/scripts/summary.py" "$REPORT/report.json"
+
+    - name: Upload reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: verity-report-${{ runner.os }}${{ inputs.only != '' && format('-{0}', inputs.only) || '' }}
+        path: ${{ steps.run.outputs.report-dir }}
+        if-no-files-found: warn
+
+    - name: Fail on test failures
+      if: steps.run.outputs.exit-code != '0'
+      shell: bash
+      run: |
+        echo "::error::Verity reported failures (exit code ${{ steps.run.outputs.exit-code }}). See the job summary and the verity-report artifact."
+        exit 1

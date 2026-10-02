@@ -126,7 +126,15 @@ public final class RunOrchestrator {
             future.complete(report);
         });
         RunHandle handle = new RunHandle(future, sessions);
-        Thread hookThread = new Thread(handle::cancel, "verity-shutdown");
+        // On Ctrl+C / SIGTERM: stop every client and give sessions time to kill their game processes and displays.
+        Thread hookThread = new Thread(() -> {
+            handle.cancel();
+            try {
+                future.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Exception ignored) {
+                // best effort while the JVM shuts down
+            }
+        }, "verity-shutdown");
         try {
             Runtime.getRuntime().addShutdownHook(hookThread);
             future.whenComplete((r, e) -> {

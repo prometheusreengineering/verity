@@ -41,7 +41,11 @@ class ProfileStoreTest {
 
         ProfileStore store = new ProfileStore(new VerityHome(tmp.resolve("home")).ensureCreated());
         Profile imported = store.importProfile(f);
-        assertThat(Path.of(imported.mods.get(0).path)).isEqualTo(f.getParent().resolve("build/libs/*.jar"));
+        assertThat(imported.mods.get(0).path).isEqualTo(f.getParent().toString().replace('\\', '/') + "/build/libs/*.jar");
+        assertThat(Path.of(imported.mods.get(1).path)).isEqualTo(f.getParent().resolve("deps"));
+        assertThat(ProfileStore.isAbsolute("C:\\mods\\*.jar")).isTrue();
+        assertThat(ProfileStore.isAbsolute("/mods/*.jar")).isTrue();
+        assertThat(ProfileStore.isAbsolute("build/libs/*.jar")).isFalse();
         assertThat(store.list()).extracting(x -> x.name).containsExactly("essential");
         assertThat(store.resolve("essential").jvm.args).containsExactly("-Dfoo=bar");
         assertThat(store.resolve(f.toString()).name).isEqualTo("essential");

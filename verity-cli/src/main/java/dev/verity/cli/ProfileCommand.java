@@ -142,7 +142,7 @@ class ProfileCommand implements Runnable {
                 p.targets.add(s);
             }
             for (String m : mods) {
-                p.mods.add(Profile.ModEntry.of(output != null ? m : Path.of(m).toAbsolutePath().normalize().toString()));
+                p.mods.add(Profile.ModEntry.of(output != null ? m : ProfileStore.absolutize(Path.of("").toAbsolutePath(), m)));
             }
             if (memory != null) p.jvm.memoryMb = memory;
             Path written;

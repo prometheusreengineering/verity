@@ -115,6 +115,8 @@ final class SettingsTab {
         r = Fx.row(g, r, "Total timeout (s)", spinner(10, 14400, p.test.timeoutSec, 60, v -> p.test.timeoutSec = v),
                 "Fail if Verity.finish() was not called by then.");
         r = Fx.row(g, r, "Shutdown grace (s)", spinner(0, 120, p.test.shutdownGraceSec, 1, v -> p.test.shutdownGraceSec = v), null);
+        r = Fx.row(g, r, "Vanilla smoke (s)", spinner(0, 3600, p.test.vanillaSmokeSec, 10, v -> p.test.vanillaSmokeSec = v),
+                "Vanilla cannot load mods: a vanilla client passes after running this long without crashing. 0 = require verity-api.");
 
         r = section(g, r, "Run");
         r = Fx.row(g, r, "Max parallel", spinner(0, 64, p.run.maxParallel, 1, v -> p.run.maxParallel = v), "0 = automatic (CPU cores and memory).");

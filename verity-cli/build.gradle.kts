@@ -12,7 +12,11 @@ dependencies {
 
 tasks.shadowJar {
     archiveBaseName.set("verity-cli")
-    archiveClassifier.set("")
-    manifest { attributes["Main-Class"] = "dev.verity.cli.VerityCli" }
+    archiveClassifier.set("all")
+    manifest {
+        attributes["Main-Class"] = "dev.verity.cli.VerityCli"
+        attributes["Implementation-Version"] = project.version
+        attributes["Enable-Native-Access"] = "ALL-UNNAMED"
+    }
     mergeServiceFiles()
 }

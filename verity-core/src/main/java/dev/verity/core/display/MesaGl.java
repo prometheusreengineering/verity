@@ -59,7 +59,14 @@ public final class MesaGl {
         return ctx.locks().withLock("mesa", () -> {
             if (Files.isRegularFile(x64.resolve("opengl32.dll"))) return x64;
             progress.stage("Downloading Mesa software OpenGL");
-            JsonNode release = Json.tree(ctx.cache().get(LATEST));
+            // Authenticated when GITHUB_TOKEN is set (CI), avoiding the anonymous API rate limit.
+            java.util.Map<String, String> headers = new java.util.HashMap<>();
+            headers.put("Accept", "application/vnd.github+json");
+            String token = System.getenv("GITHUB_TOKEN");
+            if (token != null && !token.isBlank()) headers.put("Authorization", "Bearer " + token);
+            var response = ctx.http().get(URI.create(LATEST), headers);
+            if (response.statusCode() / 100 != 2) throw new IOException("GitHub API returned HTTP " + response.statusCode() + " for " + LATEST);
+            JsonNode release = Json.tree(response.body());
             String url = null;
             for (JsonNode a : release.path("assets")) {
                 String n = a.path("name").asText();

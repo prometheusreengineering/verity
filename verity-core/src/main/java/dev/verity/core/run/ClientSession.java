@@ -225,6 +225,12 @@ public final class ClientSession {
                         if (!connected.get()) outcome.complete("startup-timeout");
                     });
             CompletableFuture.delayedExecutor(profile.test.timeoutSec, TimeUnit.SECONDS).execute(() -> outcome.complete("timeout"));
+            boolean smoke = target.loader() == LoaderType.VANILLA && profile.test.vanillaSmokeSec > 0;
+            if (smoke) {
+                CompletableFuture.delayedExecutor(profile.test.vanillaSmokeSec, TimeUnit.SECONDS).execute(() -> {
+                    if (!connected.get() && p.isAlive()) outcome.complete("smoke");
+                });
+            }
 
             String why = outcome.get();
             Status finalStatus;
@@ -240,6 +246,11 @@ public final class ClientSession {
                 case "exit" -> {
                     finalStatus = null;
                     message = null;
+                }
+                case "smoke" -> {
+                    p.stop(Duration.ofSeconds(Math.max(1, profile.test.shutdownGraceSec)));
+                    finalStatus = Status.PASSED;
+                    message = "Ran " + profile.test.vanillaSmokeSec + "s without crashing (vanilla smoke test)";
                 }
                 case "startup-timeout" -> {
                     p.stop(Duration.ofSeconds(3));

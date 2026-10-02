@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "veritysample",
+  "version": "${version}",
+  "name": "Verity sample",
+  "description": "Reports to Verity that it was loaded.",
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.verity.sample.FabricEntry"]
+  },
+  "depends": {
+    "fabricloader": "*"
+  }
+}

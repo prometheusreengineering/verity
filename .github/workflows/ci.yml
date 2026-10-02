@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: Run the end-to-end Minecraft matrix
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & unit tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Xvfb (Linux display tests)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
+      - name: Build
+        run: ./gradlew build :verity-cli:shadowJar :verity-app:shadowJar :samples:testmod:shadowJar --stacktrace
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports-${{ matrix.os }}
+          path: "**/build/reports/tests/"
+      - name: Upload jars
+        uses: actions/upload-artifact@v4
+        with:
+          name: jars-${{ matrix.os }}
+          path: |
+            verity-cli/build/libs/verity-cli-*.jar
+            verity-app/build/libs/verity-*.jar
+            samples/testmod/build/libs/verity-testmod-*.jar
+
+  e2e:
+    name: Minecraft matrix (${{ matrix.os }})
+    needs: build
+    if: github.event_name != 'workflow_dispatch' || inputs.e2e
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jars-ubuntu-latest
+          path: jars
+      - name: Place sample mod where the profile expects it
+        shell: bash
+        run: |
+          mkdir -p samples/testmod/build/libs
+          cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          ls -R jars
+      - name: Run Verity on the sample mod
+        uses: ./
+        with:
+          profile: samples/testmod/verity.json
+          jar: jars/verity-cli/build/libs/verity-cli-0.1.0-SNAPSHOT-all.jar
+          parallel: "3"
