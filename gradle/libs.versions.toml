@@ -26,4 +26,4 @@ assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 
 [plugins]
 javafx = { id = "org.openjfx.javafxplugin", version = "0.1.0" }
-shadow = { id = "com.gradleup.shadow", version = "9.6.1" }
+shadow = { id = "com.gradleup.shadow", version = "8.3.9" }
