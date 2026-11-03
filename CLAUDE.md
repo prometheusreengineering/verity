@@ -46,7 +46,8 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
   semantics exactly; keep it that way. NeoForge versions come from the Reposilite API first, then maven-metadata.xml.
 - Child version jars are copied to `versions/<id>/<id>.jar`, because Forge's `ignoreList` relies on `${version_name}.jar`.
 - Windows: Mesa (mesa-dist-win) is unpacked with 7-Zip (`7z.exe` or a downloaded `7zr.exe`), because the archives use
-  BCJ2, which commons-compress can't decode. With `softwareGl=auto`, a Mesa failure falls back to the GPU.
+  BCJ2, which commons-compress can't decode. Some releases ship builds without OpenGL (26.2.6 MSVC), so `MesaGl`
+  tries MSVC then MinGW across recent releases. With `softwareGl=auto`, a Mesa failure falls back to the GPU.
 - `Status.SKIPPED` (from `run.onlyTargetsWithAllMods`) is not a failure: use `Status.failure()`, not `!success()`,
   when deciding pass/fail. Modrinth tests use `FakeModrinth` (local HttpServer); point clients at it with the
   `verity.modrinth.api` system property.

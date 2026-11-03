@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
  * {@code bin} folder and launches Mesa-backed clients from there. Works for LWJGL 2 and 3 alike.
  */
 public final class MesaGl {
-    static final String LATEST = "https://api.github.com/repos/pal1000/mesa-dist-win/releases/latest";
+    static final String RELEASES = "https://api.github.com/repos/pal1000/mesa-dist-win/releases?per_page=5";
     /** Official standalone 7-Zip extractor; Mesa's archives use the BCJ2 filter, which only 7-Zip itself decodes. */
     static final String SEVEN_ZR = "https://www.7-zip.org/a/7zr.exe";
 
@@ -61,40 +61,75 @@ public final class MesaGl {
         Path x64 = dir.resolve("x64");
         return ctx.locks().withLock("mesa", () -> {
             if (Files.isRegularFile(x64.resolve("opengl32.dll"))) return x64;
-            progress.stage("Downloading Mesa software OpenGL");
-            // Authenticated when GITHUB_TOKEN is set (CI), avoiding the anonymous API rate limit.
-            java.util.Map<String, String> headers = new java.util.HashMap<>();
-            headers.put("Accept", "application/vnd.github+json");
-            String token = System.getenv("GITHUB_TOKEN");
-            if (token != null && !token.isBlank()) headers.put("Authorization", "Bearer " + token);
-            var response = ctx.http().get(URI.create(LATEST), headers);
-            if (response.statusCode() / 100 != 2) throw new IOException("GitHub API returned HTTP " + response.statusCode() + " for " + LATEST);
-            JsonNode release = Json.tree(response.body());
-            String url = null;
-            for (JsonNode a : release.path("assets")) {
-                String n = a.path("name").asText();
-                if (n.endsWith("-release-msvc.7z") || (url == null && n.endsWith("release-mingw.7z"))) {
-                    url = a.path("browser_download_url").asText();
-                    if (n.endsWith("-release-msvc.7z")) break;
-                }
+            // Every client of a run asks; after one failure the rest skip straight to the fallback.
+            IOException failed = FAILURES.get(dir);
+            if (failed != null) throw failed;
+            try {
+                install(dir, x64, progress);
+                return x64;
+            } catch (IOException e) {
+                FAILURES.put(dir, e);
+                throw e;
             }
-            if (url == null) throw new IOException("No Mesa build found in " + LATEST);
-            Path archive = dir.resolve("mesa.7z");
-            ctx.downloader().download(new Downloader.Artifact(List.of(URI.create(url)), archive, null, -1, true));
-            Path sevenZip = sevenZip(progress);
-            Path tmp = dir.resolve("extract");
+        });
+    }
+
+    private static final Map<Path, IOException> FAILURES = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private void install(Path dir, Path x64, Progress progress) throws Exception {
+        progress.stage("Downloading Mesa software OpenGL");
+        // Authenticated when GITHUB_TOKEN is set (CI), avoiding the anonymous API rate limit.
+        Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("Accept", "application/vnd.github+json");
+        String token = System.getenv("GITHUB_TOKEN");
+        if (token != null && !token.isBlank()) headers.put("Authorization", "Bearer " + token);
+        var response = ctx.http().get(URI.create(RELEASES), headers);
+        if (response.statusCode() / 100 != 2) throw new IOException("GitHub API returned HTTP " + response.statusCode() + " for " + RELEASES);
+        List<String> urls = candidates(Json.tree(response.body()));
+        if (urls.isEmpty()) throw new IOException("No Mesa build found in " + RELEASES);
+        Path sevenZip = sevenZip(progress);
+        Path archive = dir.resolve("mesa.7z");
+        Path tmp = dir.resolve("extract");
+        List<String> problems = new ArrayList<>();
+        for (String url : urls.subList(0, Math.min(urls.size(), MAX_ATTEMPTS))) {
+            String file = url.substring(url.lastIndexOf('/') + 1);
             try {
                 FileUtil.deleteRecursively(tmp);
-                progress.stage("Extracting Mesa");
+                ctx.downloader().download(new Downloader.Artifact(List.of(URI.create(url)), archive, null, -1, true));
+                progress.stage("Extracting Mesa (" + file + ")");
                 extract(sevenZip, archive, tmp, dir.resolve("extract.log"));
+                // Some releases ship builds without OpenGL (e.g. 26.2.6 MSVC, a known d3d12 build regression).
+                if (!Files.isRegularFile(tmp.resolve("x64").resolve("opengl32.dll"))) {
+                    problems.add(file + " has no x64/opengl32.dll");
+                    continue;
+                }
+                FileUtil.deleteRecursively(x64);
                 copyGlDlls(tmp.resolve("x64"), x64);
+                return;
+            } catch (IOException e) {
+                problems.add(file + ": " + e.getMessage());
             } finally {
                 FileUtil.deleteRecursively(tmp);
                 Files.deleteIfExists(archive);
             }
-            if (!Files.isRegularFile(x64.resolve("opengl32.dll"))) throw new IOException("Mesa archive had no x64/opengl32.dll");
-            return x64;
-        });
+        }
+        throw new IOException("No usable Mesa build (" + String.join("; ", problems) + ")");
+    }
+
+    static final int MAX_ATTEMPTS = 4;
+
+    /** Release archives to try, newest release first, MSVC before MinGW within a release. */
+    static List<String> candidates(JsonNode releases) {
+        List<String> urls = new ArrayList<>();
+        for (JsonNode release : releases) {
+            if (release.path("draft").asBoolean() || release.path("prerelease").asBoolean()) continue;
+            for (String suffix : new String[] {"-release-msvc.7z", "-release-mingw.7z"}) {
+                for (JsonNode a : release.path("assets")) {
+                    if (a.path("name").asText().endsWith(suffix)) urls.add(a.path("browser_download_url").asText());
+                }
+            }
+        }
+        return urls;
     }
 
     /** An installed 7-Zip, else the standalone {@code 7zr.exe} downloaded into the tools folder. */

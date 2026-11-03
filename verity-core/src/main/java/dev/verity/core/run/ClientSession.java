@@ -64,6 +64,8 @@ public final class ClientSession {
     private final TargetResult result = new TargetResult();
     private final List<CheckResult> checks = Collections.synchronizedList(new ArrayList<>());
     private final List<String> verityLog = Collections.synchronizedList(new ArrayList<>());
+    /** Mesa was wanted but failed to install, so the client runs on the real GPU driver. */
+    private volatile boolean mesaFallback;
     private final Deque<String> tail = new ArrayDeque<>();
     private final CompletableFuture<String> outcome = new CompletableFuture<>();
     private final AtomicBoolean connected = new AtomicBoolean();
@@ -161,6 +163,7 @@ public final class ClientSession {
                     verityLog.add("Mesa software OpenGL unavailable (" + reason + "); using the GPU driver");
                     listener.targetLog(target, "[verity] Mesa software OpenGL unavailable (" + reason + "); using the GPU driver");
                     Files.writeString(reportDir.resolve("mesa-error.txt"), stackTrace(e));
+                    mesaFallback = true;
                 }
             }
             result.java = java.toString();
@@ -225,14 +228,17 @@ public final class ClientSession {
         result.logFile = runDir.relativize(output).toString().replace('\\', '/');
 
         try (DisplaySession ds = display.open(target.id(), profile.display)) {
-            result.display = ds.description();
+            String displayDescription = mesaFallback
+                    ? ds.description().replace(" (Mesa llvmpipe)", "") + " (GPU driver, Mesa unavailable)"
+                    : ds.description();
+            result.display = displayDescription;
             Map<String, String> procEnv = new LinkedHashMap<>(ds.environment());
             if (profile.run.isolateHome) sandboxEnvironment(procEnv, layout.homeDir());
             procEnv.putAll(profile.game.env);
 
             GameProcess p = ds.start(new ProcessSpec(cmd, layout.gameDir(), procEnv, output));
             process = p;
-            setStatus(Status.RUNNING, "Running (pid " + p.pid() + ", " + ds.description() + ")");
+            setStatus(Status.RUNNING, "Running (pid " + p.pid() + ", " + displayDescription + ")");
             Thread tailer = Thread.ofVirtual().name("verity-tail-" + target.id()).start(() -> tailOutput(output, p));
 
             p.onExit().thenAccept(code -> outcome.complete("exit"));

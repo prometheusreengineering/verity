@@ -29,6 +29,21 @@ class MesaGlTest {
     }
 
     @Test
+    void triesMsvcThenMingwPerReleaseNewestFirst() throws Exception {
+        var releases = dev.verity.core.util.Json.tree("""
+                [ {"tag_name":"27.0.0-rc1","prerelease":true,
+                   "assets":[{"name":"mesa3d-27.0.0-rc1-release-msvc.7z","browser_download_url":"u/rc"}]},
+                  {"tag_name":"26.2.6","assets":[
+                    {"name":"mesa3d-26.2.6-debug-mingw.7z","browser_download_url":"u/dbg"},
+                    {"name":"mesa3d-26.2.6-release-mingw.7z","browser_download_url":"u/6-mingw"},
+                    {"name":"mesa3d-26.2.6-release-msvc.7z","browser_download_url":"u/6-msvc"}]},
+                  {"tag_name":"26.2.5","assets":[
+                    {"name":"mesa3d-26.2.5-release-msvc.7z","browser_download_url":"u/5-msvc"}]} ]
+                """);
+        assertThat(MesaGl.candidates(releases)).containsExactly("u/6-msvc", "u/6-mingw", "u/5-msvc");
+    }
+
+    @Test
     void copiesOnlyOpenGlDlls() throws Exception {
         Path x64 = Files.createDirectories(tmp.resolve("extract/x64"));
         for (String f : new String[] {"opengl32.dll", "libgallium_wgl.dll", "libglapi.dll", "dxil.dll", "vulkan_lvp.dll",
