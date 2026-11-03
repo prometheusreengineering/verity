@@ -22,6 +22,7 @@ public final class InstallContext {
     private final PathLocks locks;
     private final VersionResolver resolver;
     private final JavaRuntimeManager java;
+    private volatile dev.verity.core.modrinth.ModrinthClient modrinth;
 
     public InstallContext(VerityHome home, GlobalSettings settings, Http http) {
         this.home = home;
@@ -74,5 +75,16 @@ public final class InstallContext {
 
     public JavaRuntimeManager java() {
         return java;
+    }
+
+    public dev.verity.core.modrinth.ModrinthClient modrinth() {
+        dev.verity.core.modrinth.ModrinthClient m = modrinth;
+        if (m == null) {
+            synchronized (this) {
+                if (modrinth == null) modrinth = new dev.verity.core.modrinth.ModrinthClient(cache);
+                m = modrinth;
+            }
+        }
+        return m;
     }
 }

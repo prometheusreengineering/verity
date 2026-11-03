@@ -113,6 +113,25 @@ class ProfileCommand implements Runnable {
         @Option(names = {"-m", "--mod"}, paramLabel = "PATH", description = "Mod jar, folder or glob (made absolute).")
         List<String> mods = new ArrayList<>();
 
+        @Option(names = "--modrinth", paramLabel = "PROJECT[@VERSION]",
+                description = "Mod from Modrinth (slug or id, optionally pinned), picked per target. Repeatable.")
+        List<String> modrinth = new ArrayList<>();
+
+        @Option(names = "--channel", description = "Modrinth release channel for --modrinth mods: release (default), beta or alpha.")
+        String channel;
+
+        @Option(names = "--select-modrinth", split = ",", paramLabel = "PROJECT",
+                description = "Add a selector for every version/loader these Modrinth projects have files for "
+                        + "(narrow with --select RANGE, --loaders, --latest-patch).")
+        List<String> selectModrinth = new ArrayList<>();
+
+        @Option(names = "--only-with-all-mods", description = "Skip targets where some mod entry has no file.")
+        boolean onlyWithAllMods;
+
+        @Option(names = "--smoke", paramLabel = "SECONDS",
+                description = "Modded targets pass after running this long without crashing (when the mod doesn't use verity-api).")
+        Integer smoke;
+
         @Option(names = "--memory", description = "Max heap per client in MiB (default 2048).")
         Integer memory;
 
@@ -127,10 +146,11 @@ class ProfileCommand implements Runnable {
             Profile p = new Profile();
             p.name = name;
             for (String t : targets) p.targets.add(parseTarget(t));
-            if (select != null) {
+            if (select != null || !selectModrinth.isEmpty()) {
                 Profile.TargetSpec s = new Profile.TargetSpec();
                 s.select = new Profile.Selector();
-                s.select.minecraft = select;
+                s.select.minecraft = select != null ? select : "*";
+                s.select.modrinth.addAll(selectModrinth.stream().map(String::trim).filter(x -> !x.isEmpty()).toList());
                 s.select.latestPatchOnly = latestPatch;
                 for (String l : loaders) {
                     try {
@@ -144,6 +164,15 @@ class ProfileCommand implements Runnable {
             for (String m : mods) {
                 p.mods.add(Profile.ModEntry.of(output != null ? m : ProfileStore.absolutize(Path.of("").toAbsolutePath(), m)));
             }
+            for (String m : modrinth) {
+                int at = m.indexOf('@');
+                Profile.ModEntry e = Profile.ModEntry.modrinth(at > 0 ? m.substring(0, at) : m);
+                if (at > 0) e.version = m.substring(at + 1);
+                e.channel = channel;
+                p.mods.add(e);
+            }
+            if (onlyWithAllMods) p.run.onlyTargetsWithAllMods = true;
+            if (smoke != null) p.test.smokeSec = smoke;
             if (memory != null) p.jvm.memoryMb = memory;
             Path written;
             if (output != null) {

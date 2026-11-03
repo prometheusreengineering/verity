@@ -175,4 +175,68 @@ class RunOrchestratorTest {
         assertThat(junit).contains("name=\"patched\"").contains("class was not transformed");
         assertThat(Reports.read(dir).results).hasSize(5);
     }
+
+    @Test
+    void modrinthModsSkipTargetsWithoutFilesAndSmokeTestTheRest() throws Exception {
+        try (dev.verity.core.modrinth.FakeModrinth fake = dev.verity.core.modrinth.FakeModrinth.essential(tmp.resolve("modrinth"))) {
+            System.setProperty(dev.verity.core.modrinth.ModrinthClient.PROP_API, fake.base);
+            try {
+                VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
+                GlobalSettings settings = new GlobalSettings();
+                settings.javaOverrides.put(8, System.getProperty("java.home"));
+                InstallContext ctx = new InstallContext(home, settings, new Http());
+                seedVersion(home, "fake-idle", clientJar());
+                // An offline Fabric install on top of it: loader list + profile JSON already in the caches.
+                String fabricId = "fabric-loader-0.0.1-fake-idle";
+                Path fabricJson = home.versions().resolve(fabricId).resolve(fabricId + ".json");
+                Files.createDirectories(fabricJson.getParent());
+                Files.writeString(fabricJson, "{\"id\":\"" + fabricId + "\",\"inheritsFrom\":\"fake-idle\",\"mainClass\":\""
+                        + FakeGame.class.getName() + "\",\"libraries\":[]}");
+                String loaderUrl = dev.verity.core.meta.FabricMeta.BASE + "/versions/loader/fake-idle";
+                Files.writeString(home.metaCache().resolve(Hashing.sha1(loaderUrl.getBytes(java.nio.charset.StandardCharsets.UTF_8)) + ".cache"),
+                        "[{\"loader\":{\"version\":\"0.0.1\",\"stable\":true}}]");
+
+                Path universal = TestJars.jar(tmp.resolve("target/prometheus.jar"), Map.of("a.txt", "x"));
+                Profile p = new Profile();
+                p.name = "modrinth-e2e";
+                p.source = tmp.resolve("p.json");
+                p.mods.add(Profile.ModEntry.of(universal.toString()));
+                p.mods.add(Profile.ModEntry.modrinth("essential"));
+                p.targets.add(Profile.TargetSpec.of("fake-idle", LoaderType.FABRIC));
+                p.targets.add(Profile.TargetSpec.of("fake-none", LoaderType.FABRIC));
+                p.run.onlyTargetsWithAllMods = true;
+                p.test.smokeSec = 4;
+                p.test.timeoutSec = 60;
+                p.test.startupTimeoutSec = 10; // must not apply while smoke testing
+                p.test.shutdownGraceSec = 1;
+                p.jvm.memoryMb = 512;
+
+                RunOptions opts = new RunOptions();
+                opts.displayProvider = NO_DISPLAY;
+                opts.reportDir = tmp.resolve("report");
+                List<String> lines = Collections.synchronizedList(new java.util.ArrayList<>());
+                RunReport report = new RunOrchestrator(ctx).start(p, opts, new RunListener() {
+                    @Override
+                    public void targetLog(Target target, String line) {
+                        lines.add(target.id() + " " + line);
+                    }
+                }).report().get(120, TimeUnit.SECONDS);
+
+                Map<String, TargetResult> byId = new HashMap<>();
+                report.results.forEach(r -> byId.put(r.id, r));
+                TargetResult skipped = byId.get("fake-none-fabric");
+                assertThat(skipped.status).isEqualTo(Status.SKIPPED);
+                assertThat(skipped.message).contains("modrinth:essential");
+                TargetResult ran = byId.get("fake-idle-fabric");
+                assertThat(ran.status).as(ran.message).isEqualTo(Status.PASSED);
+                assertThat(ran.message).contains("smoke test with 2 mods");
+                assertThat(ran.mods).containsExactlyInAnyOrder("prometheus.jar", "essential-fabric-fake.jar");
+                assertThat(lines).anyMatch(l -> l.contains("mods: essential-fabric-fake.jar prometheus.jar"));
+                assertThat(report.success()).isTrue();
+                assertThat(Files.readString(tmp.resolve("report").resolve(Reports.JUNIT))).contains("<skipped message=");
+            } finally {
+                System.clearProperty(dev.verity.core.modrinth.ModrinthClient.PROP_API);
+            }
+        }
+    }
 }

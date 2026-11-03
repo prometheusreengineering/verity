@@ -18,7 +18,8 @@ public class RunReport {
 
     @JsonIgnore
     public boolean success() {
-        return !results.isEmpty() && results.stream().allMatch(TargetResult::success);
+        return results.stream().anyMatch(TargetResult::success)
+                && results.stream().noneMatch(r -> r.status == null || r.status.failure());
     }
 
     public long count(Status s) {

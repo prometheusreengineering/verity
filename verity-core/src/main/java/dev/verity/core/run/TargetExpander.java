@@ -23,8 +23,23 @@ public final class TargetExpander {
 
         String latestRelease() throws IOException;
 
+        /** (Minecraft version, loader) pairs a Modrinth project has files for. */
+        default Set<Target> modrinthTargets(String project, String channel) throws IOException, ProfileException {
+            throw new ProfileException("Modrinth is not available here");
+        }
+
         static Catalog of(MetaService meta) {
+            return of(meta, null);
+        }
+
+        static Catalog of(MetaService meta, dev.verity.core.modrinth.ModrinthResolver modrinth) {
             return new Catalog() {
+                @Override
+                public Set<Target> modrinthTargets(String project, String channel) throws IOException, ProfileException {
+                    if (modrinth == null) return Catalog.super.modrinthTargets(project, channel);
+                    return modrinth.supportedTargets(project, channel);
+                }
+
                 @Override
                 public List<String> gameVersions(LoaderType loader) throws IOException {
                     return meta.gameVersions(loader);
@@ -49,7 +64,7 @@ public final class TargetExpander {
         for (Profile.TargetSpec spec : profile.targets) {
             if (!spec.enabled) continue;
             if (spec.select != null) {
-                for (Target t : select(spec.select)) out.putIfAbsent(t.id(), t);
+                for (Target t : select(spec.select, channels(profile))) out.putIfAbsent(t.id(), t);
             } else {
                 if (spec.minecraft == null || spec.minecraft.isBlank()) throw new ProfileException("Target without a Minecraft version: " + spec);
                 LoaderType loader = spec.loader == null ? LoaderType.VANILLA : spec.loader;
@@ -69,11 +84,48 @@ public final class TargetExpander {
         return versions.get(0);
     }
 
+    /** Release channel per Modrinth project, taken from the profile's matching mod entry. */
+    static Map<String, String> channels(Profile profile) {
+        Map<String, String> out = new java.util.HashMap<>();
+        for (Profile.ModEntry e : profile.mods) {
+            if (e.fromModrinth() && e.channel != null && !e.channel.isBlank()) out.put(e.modrinth.trim().toLowerCase(), e.channel);
+        }
+        return out;
+    }
+
     List<Target> select(Profile.Selector sel) throws IOException, ProfileException {
-        List<LoaderType> loaders = sel.loaders == null || sel.loaders.isEmpty() ? List.of(LoaderType.VANILLA) : sel.loaders;
+        return select(sel, Map.of());
+    }
+
+    List<Target> select(Profile.Selector sel, Map<String, String> channels) throws IOException, ProfileException {
+        Set<String> modrinthPairs = null;
+        if (sel.modrinth != null && !sel.modrinth.isEmpty()) {
+            for (String project : sel.modrinth) {
+                if (project == null || project.isBlank()) continue;
+                Set<String> pairs = new LinkedHashSet<>();
+                String channel = channels.getOrDefault(project.trim().toLowerCase(), "release");
+                for (Target t : catalog.modrinthTargets(project.trim(), channel)) pairs.add(t.minecraft() + "|" + t.loader().id());
+                if (modrinthPairs == null) modrinthPairs = pairs;
+                else modrinthPairs.retainAll(pairs);
+            }
+        }
+        List<LoaderType> loaders;
+        if (sel.loaders != null && !sel.loaders.isEmpty()) {
+            loaders = sel.loaders;
+        } else if (modrinthPairs != null) {
+            Set<String> present = new java.util.HashSet<>();
+            for (String pair : modrinthPairs) present.add(pair.substring(pair.indexOf('|') + 1));
+            loaders = java.util.Arrays.stream(LoaderType.values()).filter(l -> present.contains(l.id())).toList();
+        } else {
+            loaders = List.of(LoaderType.VANILLA);
+        }
         List<Target> out = new ArrayList<>();
         for (LoaderType loader : loaders) {
             List<String> versions = sortedDesc(catalog.gameVersions(loader));
+            if (modrinthPairs != null) {
+                Set<String> pairs = modrinthPairs;
+                versions = versions.stream().filter(v -> pairs.contains(v + "|" + loader.id())).toList();
+            }
             List<String> picked = new ArrayList<>();
             String spec = sel.minecraft == null ? "*" : sel.minecraft.trim();
             if (spec.equalsIgnoreCase("latest")) {

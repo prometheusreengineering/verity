@@ -69,10 +69,15 @@ public class Profile {
         /** Keep at most this many newest versions per loader (0 = unlimited). */
         public int limit;
         public String loaderVersion;
+        /**
+         * Modrinth projects (slugs or ids): only (Minecraft version, loader) pairs every listed project has files for.
+         */
+        public List<String> modrinth = new ArrayList<>();
 
         @Override
         public String toString() {
-            return minecraft + " x " + loaders + (latestPatchOnly ? " latest-patch" : "") + (limit > 0 ? " limit " + limit : "");
+            return (modrinth != null && !modrinth.isEmpty() ? "modrinth " + modrinth + " " : "") + minecraft + " x " + loaders
+                    + (latestPatchOnly ? " latest-patch" : "") + (limit > 0 ? " limit " + limit : "");
         }
     }
 
@@ -96,8 +101,16 @@ public class Profile {
     }
 
     public static class ModEntry {
-        /** File, folder or glob ({@code build/libs/*.jar}, {@code deps/**}). */
+        /** File, folder or glob ({@code build/libs/*.jar}, {@code deps/**}). Set this or {@link #modrinth}. */
         public String path;
+        /** Modrinth project slug or id; the matching file is picked per target. */
+        public String modrinth;
+        /** Modrinth: pin a version number or id instead of the newest matching one. */
+        public String version;
+        /** Modrinth: newest {@code release} (default), or also {@code beta}/{@code alpha} builds. */
+        public String channel;
+        /** Modrinth: also install the version's required dependencies. */
+        public boolean dependencies = true;
         public Match match = Match.AUTO;
         /** Optional manual rule: only these loaders. Setting a rule overrides metadata detection. */
         public List<LoaderType> loaders = new ArrayList<>();
@@ -108,6 +121,23 @@ public class Profile {
             ModEntry m = new ModEntry();
             m.path = path;
             return m;
+        }
+
+        public static ModEntry modrinth(String project) {
+            ModEntry m = new ModEntry();
+            m.modrinth = project;
+            return m;
+        }
+
+        // Not named isModrinth(): Jackson would treat it as the "modrinth" property's getter and drop the field.
+        public boolean fromModrinth() {
+            return modrinth != null && !modrinth.isBlank();
+        }
+
+        /** Short human label: the path or {@code modrinth:slug}. */
+        @JsonIgnore
+        public String label() {
+            return fromModrinth() ? "modrinth:" + modrinth + (version != null && !version.isBlank() ? "@" + version : "") : path;
         }
 
         @JsonIgnore
@@ -201,6 +231,11 @@ public class Profile {
          * the hook on vanilla too.
          */
         public int vanillaSmokeSec = 60;
+        /**
+         * Smoke test for modded targets: a client that has not connected through verity-api passes once it has run
+         * this long without crashing. 0 = modded targets must report through verity-api.
+         */
+        public int smokeSec;
     }
 
     public static class Run {
@@ -210,5 +245,7 @@ public class Profile {
         public boolean keepInstances;
         /** Point HOME/APPDATA/user.home into the instance so mods cannot touch the real user profile. */
         public boolean isolateHome = true;
+        /** Skip (instead of run) targets where some enabled mod entry has no file for that version/loader. */
+        public boolean onlyTargetsWithAllMods;
     }
 }

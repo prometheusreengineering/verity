@@ -2,6 +2,8 @@ package dev.verity.cli;
 
 import dev.verity.core.install.InstallContext;
 import dev.verity.core.meta.LoaderType;
+import dev.verity.core.modrinth.ModrinthResolver;
+import dev.verity.core.mods.ModPlanner;
 import dev.verity.core.mods.ModResolver;
 import dev.verity.core.profile.Profile;
 import dev.verity.core.profile.ProfileStore;
@@ -11,6 +13,7 @@ import dev.verity.core.run.Target;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -48,8 +51,13 @@ class PlanCommand implements Callable<Integer> {
         o.only = only;
         List<Target> targets = new RunOrchestrator(ctx).targets(p, o);
         List<ModResolver.ModFile> mods = ModResolver.expand(p);
-        out.println(ansi.string("@|bold " + p.name + "|@: " + targets.size() + " target(s), " + mods.size() + " mod jar(s)"));
+        Map<Target, ModPlanner.TargetPlan> plan = ModPlanner.plan(p, targets, mods, new ModrinthResolver(ctx.modrinth()), ctx.home());
+        long skipping = p.run.onlyTargetsWithAllMods ? plan.values().stream().filter(tp -> !tp.missingEntries().isEmpty()).count() : 0;
+        out.println(ansi.string("@|bold " + p.name + "|@: " + targets.size() + " target(s), " + p.mods.size() + " mod entr"
+                + (p.mods.size() == 1 ? "y" : "ies") + (skipping > 0 ? ", " + skipping + " skipped (a mod has no file)" : "")));
         for (Target t : targets) {
+            ModPlanner.TargetPlan tp = plan.get(t);
+            boolean skipped = p.run.onlyTargetsWithAllMods && !tp.missingEntries().isEmpty();
             String lv = "";
             if (t.loader() != LoaderType.VANILLA) {
                 String spec = t.loaderVersion() == null ? "recommended" : t.loaderVersion();
@@ -62,10 +70,18 @@ class PlanCommand implements Callable<Integer> {
                 }
                 lv = " (" + t.loader().displayName() + " " + spec + ")";
             }
-            out.println(ansi.string("  @|bold " + t.id() + "|@" + lv));
-            for (ModResolver.Decision d : ModResolver.decide(mods, t)) {
-                if (d.included()) out.println(ansi.string("      @|green +|@ " + d.mod().path().getFileName() + "  @|faint " + d.reason() + "|@"));
-                else if (verbose) out.println(ansi.string("      @|faint - " + d.mod().path().getFileName() + "  " + d.reason() + "|@"));
+            if (skipped) {
+                out.println(ansi.string("  @|faint " + t.id() + lv + "  SKIPPED: no file for " + String.join(", ", tp.missingEntries()) + "|@"));
+                if (!verbose) continue;
+            } else {
+                out.println(ansi.string("  @|bold " + t.id() + "|@" + lv));
+            }
+            for (ModPlanner.PlannedMod d : tp.mods()) {
+                if (d.included()) out.println(ansi.string("      @|green +|@ " + d.fileName() + "  @|faint " + d.reason() + "|@"));
+                else if (verbose) out.println(ansi.string("      @|faint - " + d.fileName() + "  " + d.reason() + "|@"));
+            }
+            if (!skipped && !tp.missingEntries().isEmpty()) {
+                out.println(ansi.string("      @|yellow !|@ nothing from " + String.join(", ", tp.missingEntries())));
             }
         }
         out.flush();

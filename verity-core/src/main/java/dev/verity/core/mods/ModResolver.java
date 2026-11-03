@@ -101,13 +101,8 @@ public final class ModResolver {
         Profile.ModEntry e = m.entry();
         if (target.loader() == LoaderType.VANILLA) return new Decision(m, false, "vanilla loads no mods");
         if (e.hasRules()) {
-            if (e.loaders != null && !e.loaders.isEmpty() && !e.loaders.contains(target.loader())) {
-                return new Decision(m, false, "rule: loaders " + e.loaders.stream().map(LoaderType::id).toList());
-            }
-            if (e.minecraft != null && !e.minecraft.isBlank() && !VersionPredicate.parse(e.minecraft).test(target.minecraft())) {
-                return new Decision(m, false, "rule: minecraft " + e.minecraft);
-            }
-            return new Decision(m, true, "matches rules");
+            String rejected = ruleRejection(e, target);
+            return rejected != null ? new Decision(m, false, rejected) : new Decision(m, true, "matches rules");
         }
         if (e.match == Profile.Match.ALWAYS) return new Decision(m, true, "always");
         ModInfo info = m.info();
@@ -123,6 +118,17 @@ public final class ModResolver {
             return new Decision(m, false, "only " + metaName(info.families().iterator().next()) + " metadata");
         }
         return new Decision(m, true, "multi-loader jar (" + info.families().stream().map(ModResolver::metaName).toList() + ")");
+    }
+
+    /** Why an entry's manual rules exclude {@code target}, or null if they allow it (or it has none). */
+    public static String ruleRejection(Profile.ModEntry e, Target target) {
+        if (e.loaders != null && !e.loaders.isEmpty() && !e.loaders.contains(target.loader())) {
+            return "rule: loaders " + e.loaders.stream().map(LoaderType::id).toList();
+        }
+        if (e.minecraft != null && !e.minecraft.isBlank() && !VersionPredicate.parse(e.minecraft).test(target.minecraft())) {
+            return "rule: minecraft " + e.minecraft;
+        }
+        return null;
     }
 
     static String metaName(LoaderFamily f) {

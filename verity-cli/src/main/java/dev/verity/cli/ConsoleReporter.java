@@ -97,7 +97,9 @@ final class ConsoleReporter implements RunListener {
         }
         long total = report.results.size();
         out.println();
-        out.println(ansi.string((report.success() ? "@|bold,green " : "@|bold,red ") + report.passed() + "/" + total + " passed|@"));
+        long skipped = report.count(Status.SKIPPED);
+        out.println(ansi.string((report.success() ? "@|bold,green " : "@|bold,red ") + report.passed() + "/" + (total - skipped) + " passed|@"
+                + (skipped > 0 ? ansi.string(" @|faint (" + skipped + " skipped: a mod has no file for them)|@") : "")));
         Path dir = Path.of(report.runDir);
         out.println(ansi.string("@|faint HTML: " + dir.resolve(Reports.HTML) + "|@"));
         out.println(ansi.string("@|faint JUnit: " + dir.resolve(Reports.JUNIT) + "|@"));
@@ -110,6 +112,7 @@ final class ConsoleReporter implements RunListener {
             case PASSED, PREPARED -> ansi.string("@|bold,green " + name + "|@");
             case FAILED, CRASHED, ERROR -> ansi.string("@|bold,red " + name + "|@");
             case TIMED_OUT, CANCELLED -> ansi.string("@|bold,yellow " + name + "|@");
+            case SKIPPED -> ansi.string("@|faint " + name + "|@");
             default -> ansi.string("@|blue " + name + "|@");
         };
     }

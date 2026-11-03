@@ -54,6 +54,7 @@ public final class ClientSession {
     private final DisplayProvider display;
     private final LaunchAccount account;
     private final List<Path> mods;
+    private final List<dev.verity.core.net.Downloader.Artifact> downloads;
     private final Path instanceRoot;
     private final Path reportDir;
     private final Path runDir;
@@ -70,7 +71,8 @@ public final class ClientSession {
     private volatile GameProcess process;
 
     ClientSession(Target target, Profile profile, Installer installer, HookServer hook, DisplayProvider display, LaunchAccount account,
-                  List<Path> mods, Path instanceRoot, Path runDir, boolean freshInstance, RunListener listener) {
+                  List<Path> mods, List<dev.verity.core.net.Downloader.Artifact> downloads, Path instanceRoot, Path runDir,
+                  boolean freshInstance, RunListener listener) {
         this.target = target;
         this.profile = profile;
         this.installer = installer;
@@ -78,6 +80,7 @@ public final class ClientSession {
         this.display = display;
         this.account = account;
         this.mods = mods;
+        this.downloads = downloads;
         this.instanceRoot = instanceRoot;
         this.runDir = runDir;
         this.reportDir = runDir.resolve("targets").resolve(target.id());
@@ -141,6 +144,10 @@ public final class ClientSession {
             if (target.loader() != LoaderType.VANILLA) {
                 loaderVersion = installer.context().meta().loader(target.loader()).resolve(target.minecraft(), target.loaderVersion());
                 result.loaderVersion = loaderVersion;
+            }
+            if (!downloads.isEmpty()) {
+                progress().stage("Downloading " + downloads.size() + " mod" + (downloads.size() == 1 ? "" : "s"));
+                installer.context().downloader().downloadAll(downloads, progress());
             }
             InstalledVersion version = installer.install(target.minecraft(), target.loader(), loaderVersion, progress());
             Path java = installer.context().java().javaFor(version, progress());
@@ -229,14 +236,17 @@ public final class ClientSession {
             Thread tailer = Thread.ofVirtual().name("verity-tail-" + target.id()).start(() -> tailOutput(output, p));
 
             p.onExit().thenAccept(code -> outcome.complete("exit"));
-            CompletableFuture.delayedExecutor(profile.test.startupTimeoutSec, TimeUnit.SECONDS)
-                    .execute(() -> {
-                        if (!connected.get()) outcome.complete("startup-timeout");
-                    });
+            int smokeSec = target.loader() == LoaderType.VANILLA ? profile.test.vanillaSmokeSec : profile.test.smokeSec;
+            // With a smoke test, a client that never connects passes by surviving, so the connect timeout doesn't apply.
+            if (smokeSec <= 0) {
+                CompletableFuture.delayedExecutor(profile.test.startupTimeoutSec, TimeUnit.SECONDS)
+                        .execute(() -> {
+                            if (!connected.get()) outcome.complete("startup-timeout");
+                        });
+            }
             CompletableFuture.delayedExecutor(profile.test.timeoutSec, TimeUnit.SECONDS).execute(() -> outcome.complete("timeout"));
-            boolean smoke = target.loader() == LoaderType.VANILLA && profile.test.vanillaSmokeSec > 0;
-            if (smoke) {
-                CompletableFuture.delayedExecutor(profile.test.vanillaSmokeSec, TimeUnit.SECONDS).execute(() -> {
+            if (smokeSec > 0) {
+                CompletableFuture.delayedExecutor(smokeSec, TimeUnit.SECONDS).execute(() -> {
                     if (!connected.get() && p.isAlive()) outcome.complete("smoke");
                 });
             }
@@ -259,7 +269,8 @@ public final class ClientSession {
                 case "smoke" -> {
                     p.stop(Duration.ofSeconds(Math.max(1, profile.test.shutdownGraceSec)));
                     finalStatus = Status.PASSED;
-                    message = "Ran " + profile.test.vanillaSmokeSec + "s without crashing (vanilla smoke test)";
+                    message = "Ran " + smokeSec + "s without crashing (" + (target.loader() == LoaderType.VANILLA ? "vanilla smoke test)"
+                            : "smoke test with " + mods.size() + " mod" + (mods.size() == 1 ? "" : "s") + ")");
                 }
                 case "startup-timeout" -> {
                     p.stop(Duration.ofSeconds(3));

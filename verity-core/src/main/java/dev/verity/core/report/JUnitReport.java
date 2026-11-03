@@ -17,10 +17,13 @@ public final class JUnitReport {
         int tests = 0;
         int failures = 0;
         int errors = 0;
+        int skipped = 0;
         for (TargetResult t : r.results) {
             tests += 1 + t.checks.size();
             failures += (int) t.checks.stream().filter(c -> !c.passed()).count();
-            if (!t.success()) {
+            if (t.status == Status.SKIPPED) {
+                skipped++;
+            } else if (!t.success()) {
                 if (t.status == Status.ERROR || t.status == Status.CANCELLED) errors++;
                 else failures++;
             }
@@ -28,6 +31,7 @@ public final class JUnitReport {
         double total = r.startedAt != null && r.finishedAt != null ? Duration.between(r.startedAt, r.finishedAt).toMillis() / 1000.0 : 0;
         b.append("<testsuites name=\"").append(x("verity " + r.profile)).append("\" tests=\"").append(tests)
                 .append("\" failures=\"").append(failures).append("\" errors=\"").append(errors)
+                .append("\" skipped=\"").append(skipped)
                 .append("\" time=\"").append(secs(total)).append("\">\n");
         for (TargetResult t : r.results) suite(b, r, t);
         b.append("</testsuites>\n");
@@ -36,12 +40,14 @@ public final class JUnitReport {
 
     private static void suite(StringBuilder b, RunReport r, TargetResult t) {
         long checkFailures = t.checks.stream().filter(c -> !c.passed()).count();
-        boolean clientFailed = !t.success();
+        boolean skip = t.status == Status.SKIPPED;
+        boolean clientFailed = !t.success() && !skip;
         boolean error = t.status == Status.ERROR || t.status == Status.CANCELLED;
         String cls = "verity." + t.id;
         b.append("  <testsuite name=\"").append(x(t.id)).append("\" tests=\"").append(1 + t.checks.size())
                 .append("\" failures=\"").append(checkFailures + (clientFailed && !error ? 1 : 0))
                 .append("\" errors=\"").append(error ? 1 : 0)
+                .append("\" skipped=\"").append(skip ? 1 : 0)
                 .append("\" time=\"").append(secs(t.durationMs / 1000.0)).append("\"");
         if (r.startedAt != null) b.append(" timestamp=\"").append(r.startedAt.toString()).append("\"");
         b.append(">\n    <properties>\n");
@@ -56,6 +62,8 @@ public final class JUnitReport {
         b.append("    <testcase classname=\"").append(x(cls)).append("\" name=\"client\" time=\"").append(secs(t.durationMs / 1000.0)).append("\"");
         if (t.success()) {
             b.append("/>\n");
+        } else if (skip) {
+            b.append(">\n      <skipped message=\"").append(x(t.message)).append("\"/>\n    </testcase>\n");
         } else {
             String tag = error ? "error" : "failure";
             b.append(">\n      <").append(tag).append(" type=\"").append(t.status).append("\" message=\"").append(x(t.message)).append("\">")

@@ -58,4 +58,32 @@ class ProfileStoreTest {
         assertThat(store.delete(copy)).isTrue();
         assertThat(store.list()).hasSize(1);
     }
+
+    @Test
+    void modrinthFieldsRoundTrip() throws Exception {
+        Path f = tmp.resolve("m.json");
+        Files.writeString(f, """
+                { "name": "pe",
+                  "targets": [ { "select": { "modrinth": ["essential"], "minecraft": ">=1.8.9" } } ],
+                  "mods": [ { "path": "target/prometheus-*.jar" },
+                            { "modrinth": "essential", "channel": "beta", "version": "1.3.0", "dependencies": false } ],
+                  "run": { "onlyTargetsWithAllMods": true },
+                  "test": { "smokeSec": 180 } }
+                """);
+        Profile p = ProfileStore.load(f);
+        assertThat(p.targets.get(0).select.modrinth).containsExactly("essential");
+        Profile.ModEntry m = p.mods.get(1);
+        assertThat(m.fromModrinth()).isTrue();
+        assertThat(m.label()).isEqualTo("modrinth:essential@1.3.0");
+        assertThat(m.channel).isEqualTo("beta");
+        assertThat(m.dependencies).isFalse();
+        assertThat(p.run.onlyTargetsWithAllMods).isTrue();
+        assertThat(p.test.smokeSec).isEqualTo(180);
+        dev.verity.core.run.RunOrchestrator.validate(p);
+
+        Profile both = ProfileStore.copy(p);
+        both.mods.get(1).path = "x.jar";
+        assertThatThrownBy(() -> dev.verity.core.run.RunOrchestrator.validate(both)).isInstanceOf(ProfileException.class)
+                .hasMessageContaining("exactly one");
+    }
 }

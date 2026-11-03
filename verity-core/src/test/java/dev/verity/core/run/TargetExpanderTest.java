@@ -25,7 +25,53 @@ class TargetExpanderTest {
         public String latestRelease() {
             return "1.21.10";
         }
+
+        @Override
+        public java.util.Set<Target> modrinthTargets(String project, String channel) {
+            if (project.equals("essential")) {
+                java.util.Set<Target> s = new java.util.LinkedHashSet<>(List.of(new Target("1.8.9", LoaderType.FORGE, null),
+                        new Target("1.20.1", LoaderType.FORGE, null), new Target("1.20.1", LoaderType.FABRIC, null),
+                        new Target("1.20.4", LoaderType.FABRIC, null), new Target("1.21.1", LoaderType.NEOFORGE, null),
+                        // a pair no loader install exists for is dropped
+                        new Target("1.19.4", LoaderType.FABRIC, null)));
+                if (channel.equals("beta")) s.add(new Target("1.21.10", LoaderType.FABRIC, null));
+                return s;
+            }
+            return java.util.Set.of(new Target("1.20.1", LoaderType.FABRIC, null), new Target("1.20.4", LoaderType.FABRIC, null));
+        }
     });
+
+    static Profile.TargetSpec modrinthSelector(String... projects) {
+        Profile.TargetSpec sel = new Profile.TargetSpec();
+        sel.select = new Profile.Selector();
+        sel.select.modrinth = List.of(projects);
+        return sel;
+    }
+
+    @Test
+    void modrinthSelectorUsesPublishedPairs() throws Exception {
+        Profile p = new Profile();
+        p.targets.add(modrinthSelector("essential"));
+        assertThat(expander.expand(p)).extracting(Target::id).containsExactly(
+                "1.20.4-fabric", "1.20.1-fabric", "1.20.1-forge", "1.8.9-forge", "1.21.1-neoforge");
+
+        // intersection of projects, narrowed by range and loaders
+        Profile q = new Profile();
+        Profile.TargetSpec sel = modrinthSelector("essential", "other");
+        sel.select.minecraft = ">=1.20.2";
+        q.targets.add(sel);
+        assertThat(expander.expand(q)).extracting(Target::id).containsExactly("1.20.4-fabric");
+
+        // channel comes from the matching mod entry
+        Profile r = new Profile();
+        r.targets.add(modrinthSelector("essential"));
+        Profile.ModEntry e = Profile.ModEntry.modrinth("essential");
+        e.channel = "beta";
+        r.mods.add(e);
+        Profile.TargetSpec only = r.targets.get(0);
+        only.select.loaders = List.of(LoaderType.FABRIC);
+        assertThat(expander.expand(r)).extracting(Target::id).containsExactly("1.21.10-fabric", "1.20.4-fabric", "1.20.1-fabric");
+    }
 
     @Test
     void explicitAndSelectors() throws Exception {

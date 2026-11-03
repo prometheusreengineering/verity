@@ -36,7 +36,7 @@ public final class HtmlReport {
                 .tile b{display:block;font-size:20px}
                 .wrap{overflow-x:auto}table{border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
                 th,td{padding:6px 12px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
-                .s{font-weight:600}.PASSED,.PREPARED{color:var(--pass)}.FAILED,.CRASHED,.ERROR{color:var(--fail)}.TIMED_OUT,.CANCELLED{color:var(--warn)}.none{color:var(--idle)}
+                .s{font-weight:600}.PASSED,.PREPARED{color:var(--pass)}.FAILED,.CRASHED,.ERROR{color:var(--fail)}.TIMED_OUT,.CANCELLED{color:var(--warn)}.SKIPPED{color:var(--idle)}.none{color:var(--idle)}
                 details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:8px 14px}
                 summary{cursor:pointer;font-weight:600}pre{background:var(--code);padding:10px;border-radius:8px;overflow-x:auto;font-size:12px;max-height:420px}
                 ul.checks{padding-left:18px}a{color:inherit}img{max-width:100%;border-radius:8px;border:1px solid var(--line)}
@@ -54,6 +54,7 @@ public final class HtmlReport {
         tile(b, "Crashed", r.count(Status.CRASHED), "CRASHED");
         tile(b, "Timed out", r.count(Status.TIMED_OUT), "TIMED_OUT");
         tile(b, "Errors", r.count(Status.ERROR), "ERROR");
+        if (r.count(Status.SKIPPED) > 0) tile(b, "Skipped", r.count(Status.SKIPPED), null);
         b.append("</div>");
 
         // Matrix
@@ -85,7 +86,7 @@ public final class HtmlReport {
 
         b.append("<h2>Targets</h2>");
         for (TargetResult t : r.results) {
-            b.append("<details id=\"").append(h(t.id)).append("\"").append(t.success() ? "" : " open").append("><summary><span class=\"s ")
+            b.append("<details id=\"").append(h(t.id)).append("\"").append(t.success() || t.status == Status.SKIPPED ? "" : " open").append("><summary><span class=\"s ")
                     .append(t.status).append("\">").append(label(t.status)).append("</span> ").append(h(t.id))
                     .append(" <span class=\"muted\">").append(String.format(Locale.ROOT, "%.1fs", t.durationMs / 1000.0)).append("</span></summary>");
             if (t.message != null) b.append("<p>").append(h(t.message)).append("</p>");
@@ -141,6 +142,7 @@ public final class HtmlReport {
             case TIMED_OUT -> "⏱ timed out";
             case ERROR -> "⚠ error";
             case CANCELLED -> "■ cancelled";
+            case SKIPPED -> "– skipped";
             default -> s.name().toLowerCase(Locale.ROOT);
         };
     }

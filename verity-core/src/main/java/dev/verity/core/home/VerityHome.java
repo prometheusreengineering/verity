@@ -85,6 +85,11 @@ public final class VerityHome {
         return root.resolve("instances");
     }
 
+    /** Mod jars downloaded from Modrinth, content-addressed by project and version. */
+    public Path modsCache() {
+        return root.resolve("mods-cache");
+    }
+
     public Path tools() {
         return root.resolve("tools");
     }

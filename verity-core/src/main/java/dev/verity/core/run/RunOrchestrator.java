@@ -7,6 +7,8 @@ import dev.verity.core.display.Displays;
 import dev.verity.core.hook.HookServer;
 import dev.verity.core.install.InstallContext;
 import dev.verity.core.install.Installer;
+import dev.verity.core.modrinth.ModrinthResolver;
+import dev.verity.core.mods.ModPlanner;
 import dev.verity.core.mods.ModResolver;
 import dev.verity.core.profile.Profile;
 import dev.verity.core.profile.ProfileException;
@@ -21,7 +23,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
 
@@ -49,7 +53,7 @@ public final class RunOrchestrator {
 
     /** Expands targets and applies {@code options.only}. */
     public List<Target> targets(Profile profile, RunOptions options) throws IOException, ProfileException {
-        List<Target> all = new TargetExpander(TargetExpander.Catalog.of(ctx.meta())).expand(profile);
+        List<Target> all = new TargetExpander(TargetExpander.Catalog.of(ctx.meta(), new ModrinthResolver(ctx.modrinth()))).expand(profile);
         if (options.only == null || options.only.isEmpty()) return all;
         return all.stream().filter(t -> options.only.stream().anyMatch(t::matchesFilter)).toList();
     }
@@ -63,6 +67,7 @@ public final class RunOrchestrator {
         List<Target> targets = targets(profile, options);
         if (targets.isEmpty()) throw new ProfileException("Profile '" + profile.name + "' has no targets to run");
         List<ModResolver.ModFile> mods = ModResolver.expand(profile);
+        Map<Target, ModPlanner.TargetPlan> plan = ModPlanner.plan(profile, targets, mods, new ModrinthResolver(ctx.modrinth()), ctx.home());
 
         Profile.DisplayMode mode = options.display != null ? options.display : profile.display.mode;
         DisplayProvider display = options.displayProvider != null ? options.displayProvider : Displays.forMode(mode, ctx);
@@ -71,7 +76,7 @@ public final class RunOrchestrator {
             display.warnings().forEach(listener::warning);
         }
         LaunchAccount account = options.prepareOnly ? LaunchAccount.offline("Verity") : accounts.resolve(profile.account);
-        if (targets.stream().allMatch(t -> t.loader() == dev.verity.core.meta.LoaderType.VANILLA) && !mods.isEmpty()) {
+        if (targets.stream().allMatch(t -> t.loader() == dev.verity.core.meta.LoaderType.VANILLA) && !profile.mods.isEmpty()) {
             listener.warning("All targets are vanilla, which cannot load mods");
         }
 
@@ -87,21 +92,37 @@ public final class RunOrchestrator {
 
         HookServer hook = new HookServer();
         List<ClientSession> sessions = new ArrayList<>();
+        Map<Target, TargetResult> skipped = new LinkedHashMap<>();
         for (Target t : targets) {
+            ModPlanner.TargetPlan tp = plan.get(t);
+            if (profile.run.onlyTargetsWithAllMods && !tp.missingEntries().isEmpty()) {
+                skipped.put(t, skippedResult(t, tp));
+                continue;
+            }
             Path instance = ctx.home().instances().resolve(FileUtil.safeName(profile.name)).resolve(t.id());
-            sessions.add(new ClientSession(t, profile, installer, hook, display, account, ModResolver.assigned(mods, t), instance, runDir,
-                    !keep, listener));
+            sessions.add(new ClientSession(t, profile, installer, hook, display, account, tp.paths(), tp.downloads(), instance,
+                    runDir, !keep, listener));
         }
         listener.runStarted(profile.name, targets, runDir);
-        for (ClientSession s : sessions) listener.targetStatus(s.target(), Status.PENDING, null);
+        for (Target t : targets) {
+            TargetResult sk = skipped.get(t);
+            listener.targetStatus(t, sk != null ? Status.SKIPPED : Status.PENDING, sk != null ? sk.message : null);
+        }
 
         Semaphore permits = new Semaphore(parallel);
         CompletableFuture<RunReport> future = new CompletableFuture<>();
         Thread.ofPlatform().name("verity-run").daemon(false).start(() -> {
             List<CompletableFuture<TargetResult>> results = new ArrayList<>();
-            for (ClientSession s : sessions) {
+            Map<Target, ClientSession> byTarget = new LinkedHashMap<>();
+            for (ClientSession s : sessions) byTarget.put(s.target(), s);
+            for (Target t : targets) {
+                ClientSession s = byTarget.get(t);
+                if (s == null) {
+                    results.add(CompletableFuture.completedFuture(skipped.get(t)));
+                    continue;
+                }
                 CompletableFuture<TargetResult> f = new CompletableFuture<>();
-                Thread.ofVirtual().name("verity-" + s.target().id()).start(() -> f.complete(s.run(permits, options.prepareOnly)));
+                Thread.ofVirtual().name("verity-" + t.id()).start(() -> f.complete(s.run(permits, options.prepareOnly)));
                 results.add(f);
             }
             RunReport report = new RunReport();
@@ -150,7 +171,29 @@ public final class RunOrchestrator {
         return handle;
     }
 
+    static TargetResult skippedResult(Target t, ModPlanner.TargetPlan tp) {
+        TargetResult r = new TargetResult();
+        r.id = t.id();
+        r.minecraft = t.minecraft();
+        r.loader = t.loader().id();
+        r.loaderVersion = t.loaderVersion();
+        r.status = Status.SKIPPED;
+        r.message = "No file for " + String.join(", ", tp.missingEntries());
+        r.mods = tp.included().stream().map(ModPlanner.PlannedMod::fileName).toList();
+        return r;
+    }
+
     public static void validate(Profile p) throws ProfileException {
+        for (Profile.ModEntry m : p.mods) {
+            boolean hasPath = m.path != null && !m.path.isBlank();
+            if (hasPath == m.fromModrinth()) {
+                throw new ProfileException("Each mod entry needs exactly one of \"path\" or \"modrinth\""
+                        + (hasPath ? " (both set: " + m.path + ", " + m.modrinth + ")" : ""));
+            }
+            if (m.channel != null && !m.channel.isBlank() && !m.channel.matches("(?i)release|beta|alpha")) {
+                throw new ProfileException("Mod channel must be release, beta or alpha (got '" + m.channel + "')");
+            }
+        }
         if (p.name == null || p.name.isBlank()) throw new ProfileException("Profile needs a name");
         if (p.jvm.memoryMb < 512) throw new ProfileException("jvm.memoryMb must be at least 512");
         if (p.test.timeoutSec < 10 || p.test.startupTimeoutSec < 10) throw new ProfileException("Timeouts must be at least 10 seconds");

@@ -17,7 +17,15 @@ public class FakeGame {
         System.out.println("<log4j:Event logger=\"net.minecraft.client.Minecraft\" timestamp=\"1700000000000\" level=\"INFO\" thread=\"Render thread\">");
         System.out.println("  <log4j:Message><![CDATA[Setting user: Verity]]></log4j:Message>");
         System.out.println("</log4j:Event>");
-        switch (version) {
+        java.io.File[] mods = new java.io.File(gameDir, "mods").listFiles();
+        if (mods != null) {
+            java.util.Arrays.sort(mods);
+            StringBuilder names = new StringBuilder();
+            for (java.io.File m : mods) names.append(' ').append(m.getName());
+            System.out.println("mods:" + names);
+        }
+        // Loader versions (fabric-loader-<v>-<mc>) behave like their base version.
+        switch (version.replaceFirst("^fabric-loader-[^-]+-", "")) {
             case "fake-pass" -> {
                 Verity.test("mods-dir-exists", () -> {
                     if (!Files.isDirectory(Path.of("mods"))) throw new AssertionError("no mods dir");

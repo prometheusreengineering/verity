@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-ICONS = {"PASSED": "✅", "PREPARED": "✅", "FAILED": "❌", "CRASHED": "💥", "TIMED_OUT": "⏱️", "ERROR": "⚠️", "CANCELLED": "⏹️"}
+ICONS = {"PASSED": "✅", "PREPARED": "✅", "FAILED": "❌", "CRASHED": "💥", "TIMED_OUT": "⏱️", "ERROR": "⚠️", "CANCELLED": "⏹️", "SKIPPED": "⏭️"}
 
 
 def main(path):
@@ -24,7 +24,9 @@ def main(path):
         report = json.load(f)
     results = report.get("results", [])
     passed = sum(1 for r in results if r.get("status") in ("PASSED", "PREPARED"))
-    lines = [f"### Verity · {report.get('profile')}: {passed}/{len(results)} passed", "",
+    skipped = sum(1 for r in results if r.get("status") == "SKIPPED")
+    skip_note = f" ({skipped} skipped)" if skipped else ""
+    lines = [f"### Verity · {report.get('profile')}: {passed}/{len(results) - skipped} passed{skip_note}", "",
              "| | Target | Loader version | Time | Result |", "|---|---|---|---|---|"]
     for r in results:
         status = r.get("status", "?")
