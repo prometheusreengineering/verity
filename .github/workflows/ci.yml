@@ -1,9 +1,9 @@
 name: CI
 
 on:
-  push:
-    branches: [main, "claude/**"]
-  pull_request:
+  # push:
+  #   branches: [main, "claude/**"]
+  # pull_request:
   workflow_dispatch:
     inputs:
       e2e:
