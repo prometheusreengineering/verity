@@ -25,6 +25,7 @@ testing each version and loader by hand.
 - [Quick start](#quick-start)
 - [Profiles](#profiles)
 - [Reporting results from your mod (verity-api)](#reporting-results-from-your-mod-verity-api)
+- [Mods from Modrinth](#mods-from-modrinth)
 - [How mods are assigned to targets](#how-mods-are-assigned-to-targets)
 - [Headless mode](#headless-mode)
 - [Accounts](#accounts)
@@ -73,15 +74,16 @@ Profiles are JSON files. The UI stores them in `<home>/profiles/`. A profile can
   "mods": [
     { "path": "target/prometheus-*.jar" },               // glob: re-evaluated each run, so rebuilt jars are picked up
     { "path": "deps/essential/" },                       // folder: every jar inside, matched per target
-    { "path": "deps/old-lib.jar", "loaders": ["forge"], "minecraft": "<=1.12.2" }   // manual rule
+    { "path": "deps/old-lib.jar", "loaders": ["forge"], "minecraft": "<=1.12.2" },  // manual rule
+    { "modrinth": "essential" }                          // Modrinth: right file per target, plus required deps
   ],
   "files": [ { "from": "test-configs/essential.json", "to": "essential/config.json" } ],
   "jvm":     { "memoryMb": 2048, "args": ["-Dmymod.debug=true"] },
   "game":    { "args": [], "env": {} },
   "display": { "mode": "headless", "width": 854, "height": 480, "softwareGl": "auto" },
   "account": { "type": "offline", "username": "Verity" },
-  "test":    { "startupTimeoutSec": 600, "timeoutSec": 900, "shutdownGraceSec": 10, "vanillaSmokeSec": 60 },
-  "run":     { "maxParallel": 0, "keepInstances": false, "isolateHome": true }
+  "test":    { "startupTimeoutSec": 600, "timeoutSec": 900, "shutdownGraceSec": 10, "vanillaSmokeSec": 60, "smokeSec": 0 },
+  "run":     { "maxParallel": 0, "keepInstances": false, "isolateHome": true, "onlyTargetsWithAllMods": false }
 }
 ```
 
@@ -90,12 +92,17 @@ Profiles are JSON files. The UI stores them in `<home>/profiles/`. A profile can
 | `targets[].loaderVersion` | `recommended` (Forge promotion, newest stable Fabric/NeoForge), `latest`, or an exact version |
 | `targets[].select.minecraft` | Version range: `>=1.20`, `1.20.x`, `>=1.16 <1.21`, `~1.20.1`, `[1.8.9,1.12.2]`, `1.8.9 \|\| >=1.21`, `latest`, `*` |
 | `select.latestPatchOnly` / `limit` | Keep only the newest patch of each minor line, and/or the N newest versions |
+| `select.modrinth` | Modrinth projects: keep only the (version, loader) pairs all of them publish files for |
+| `mods[].path` / `mods[].modrinth` | A local file/folder/glob, or a Modrinth project slug/id (exactly one per entry) |
 | `mods[].match` | `auto` (use jar metadata), `always`, `never` |
+| `mods[].version` / `channel` / `dependencies` | Modrinth only: pin a version, allow `beta`/`alpha` builds, install required dependencies (default on) |
 | `display.mode` | `headless` (invisible, real rendering) or `window` |
 | `display.softwareGl` | `auto`, `on`, `off`: Mesa llvmpipe instead of the GPU driver |
 | `test.startupTimeoutSec` | The mod must connect through verity-api within this time |
 | `test.timeoutSec` | `Verity.finish()` must be called within this time |
 | `test.vanillaSmokeSec` | Vanilla can't load mods, so a vanilla client passes after running this long without crashing (0 = require the hook) |
+| `test.smokeSec` | Modded targets pass after running this long without crashing, unless the mod reports through verity-api (0 = the mod must report) |
+| `run.onlyTargetsWithAllMods` | Skip targets where some mod entry has no file. Skipped targets don't fail the run |
 | `run.maxParallel` | Clients at once. `0` = automatic: half the CPU cores, limited by memory |
 | `run.keepInstances` | Keep worlds/configs between runs instead of starting each client fresh |
 | `run.isolateHome` | Point `user.home`, `HOME`/`APPDATA` into the instance |
@@ -133,6 +140,37 @@ from a release (or run `./gradlew :verity-api:publishToMavenLocal`) and shade it
 
 `samples/testmod` is a complete universal example: one jar that loads on Fabric, legacy Forge (1.7.10–1.12.2), modern
 Forge and NeoForge without depending on any Minecraft class.
+
+## Mods from Modrinth
+
+A mod entry can name a Modrinth project instead of a file. For every target, Verity picks the newest file that
+project published for that Minecraft version and loader (release builds unless `"channel": "beta"`/`"alpha"`, or a
+pinned `"version"`). It also adds the file's required dependencies, such as Fabric API, and downloads everything into
+`<home>/mods-cache`. NeoForge 1.20.1 falls back to the project's Forge files.
+
+To run on exactly the versions a project supports, give a selector `"modrinth": [...]`. For example, to test a
+universal mod you build yourself against every version and loader Essential is published for:
+
+```json
+{ "name": "prometheus-x-essential",
+  "targets": [ { "select": { "modrinth": ["essential"] } } ],
+  "mods": [ { "path": "target/prometheus-*.jar" },
+            { "modrinth": "essential" } ],
+  "run":  { "onlyTargetsWithAllMods": true },
+  "test": { "smokeSec": 180 } }
+```
+
+- The selector can be narrowed with `"minecraft"` (a range), `"loaders"`, `"latestPatchOnly"` and `"limit"`. With
+  several projects it keeps only the pairs all of them support.
+- `onlyTargetsWithAllMods` is the safety net for any target list, not just Modrinth selectors. A target where some
+  entry contributes no jar (for example, your own mod's metadata excludes that version) is reported as skipped
+  instead of running without it.
+- `smokeSec` makes a modded client pass once it has survived that long, for mods that don't call verity-api yet.
+
+CLI equivalents: `verity profile new <name> --select-modrinth essential --modrinth essential -m "target/*.jar"
+--only-with-all-mods --smoke 180`. `verity modrinth versions essential` lists what a project supports, and
+`verity plan <profile>` shows the file picked for each target. In the app, use **Mods → Add from Modrinth…** and the
+**Only on Modrinth for** field in the Targets range dialog.
 
 ## How mods are assigned to targets
 
@@ -184,14 +222,16 @@ verity run <profile|file> [--only 1.20.1-fabric,1.8.9] [--parallel N] [--display
                           [--report-dir DIR] [--[no-]keep-instances] [--logs]
 verity prepare <profile>        install everything, don't launch (CI cache warm-up)
 verity plan <profile> [-v] [--resolve]
-verity profile list | show <p> | new <name> -t MC[:LOADER[:VERSION]] -m PATH [--select RANGE --loaders a,b]
-               | rm <p> | import <file> | export <p> <file>
+verity profile list | show <p> | new <name> -t MC[:LOADER[:VERSION]] -m PATH [--modrinth PROJECT[@VERSION]]
+               [--select RANGE --loaders a,b --latest-patch] [--select-modrinth PROJECT,...] [--only-with-all-mods]
+               [--smoke SECONDS] | rm <p> | import <file> | export <p> <file>
+verity modrinth search <query> | versions <project> [--mc 1.20.1 --loader fabric] [--channel beta]
 verity versions [vanilla|fabric|forge|neoforge] [--mc 1.20.1]
 verity account login | list | rm <name> | ci-token <name>
 verity cache info | clean [--all] [--meta]
 verity ui
 Global: --home DIR (or VERITY_HOME)
-Exit codes: 0 all passed · 1 some target failed · 2 configuration error · 3 internal error
+Exit codes: 0 all passed (skipped targets don't count) · 1 some target failed · 2 configuration error · 3 internal error
 ```
 
 ## CI / GitHub Actions
@@ -226,6 +266,7 @@ results table to the job summary, uploads the reports as an artifact, and fails 
 
 ```text
 libraries/ assets/ versions/ runtimes/ installers/ tools/   shared caches (safe to delete)
+mods-cache/                                                 mods downloaded from Modrinth
 meta-cache/                                                 version lists (cached, work offline once fetched)
 profiles/  accounts/  settings.json                         your configuration
 instances/<profile>/<target>/{game,natives,home}            one isolated directory per client

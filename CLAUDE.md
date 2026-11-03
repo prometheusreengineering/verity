@@ -28,7 +28,7 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 | Module | Notes |
 |---|---|
 | `verity-api` | **Java 8 (`--release 8`), zero dependencies.** Mods shade and relocate it. Never add deps or newer APIs. |
-| `verity-core` | Engine. Packages: `meta` (Mojang/Fabric/Forge/NeoForge metadata), `install` (vanilla/Fabric/Forge processors, Java runtimes), `launch` (command builder, natives, instance layout, log parsing), `display` (window, Xvfb, Win32 hidden desktop + Mesa), `mods` (jar inspection, per-target assignment), `profile`, `hook` (socket server for verity-api), `run` (orchestrator, `ClientSession` state machine), `report` (JSON/JUnit/HTML), `auth`, `net`, `home`, `util` |
+| `verity-core` | Engine. Packages: `meta` (Mojang/Fabric/Forge/NeoForge metadata), `install` (vanilla/Fabric/Forge processors, Java runtimes), `launch` (command builder, natives, instance layout, log parsing), `display` (window, Xvfb, Win32 hidden desktop + Mesa), `mods` (jar inspection, `ModPlanner`: per-target assignment of local + Modrinth mods), `modrinth` (API client, per-target file/dependency picking), `profile`, `hook` (socket server for verity-api), `run` (orchestrator, `ClientSession` state machine), `report` (JSON/JUnit/HTML), `auth`, `net`, `home`, `util` |
 | `verity-cli` | picocli. Exit codes: 0 pass, 1 test failures, 2 config error (`ProfileException`), 3 internal error |
 | `verity-ui` | JavaFX + AtlantaFX, code-only (no FXML). All work goes through `verity-core`; background work via `Fx.async`, run events batched through `RunTab`'s pump. |
 | `verity-app` | `Main`: no args → UI, else CLI. Shadow jar + `jpackageImage` |
@@ -47,6 +47,11 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 - Child version jars are copied to `versions/<id>/<id>.jar`, because Forge's `ignoreList` relies on `${version_name}.jar`.
 - Windows: Mesa (mesa-dist-win) is unpacked with 7-Zip (`7z.exe` or a downloaded `7zr.exe`), because the archives use
   BCJ2, which commons-compress can't decode. With `softwareGl=auto`, a Mesa failure falls back to the GPU.
+- `Status.SKIPPED` (from `run.onlyTargetsWithAllMods`) is not a failure: use `Status.failure()`, not `!success()`,
+  when deciding pass/fail. Modrinth tests use `FakeModrinth` (local HttpServer); point clients at it with the
+  `verity.modrinth.api` system property.
+- Don't name boolean helpers on profile POJOs `isX()`/`getX()` for an existing field `x`: Jackson merges them and a
+  `@JsonIgnore` on the helper drops the field (see `ModEntry.fromModrinth()`).
 - Tests must be path-separator agnostic (Windows CI runs them): build expected paths with `Path.of(...).toString()`.
   Never put glob characters through `Path.of` (Windows rejects `*`); see `ProfileStore.absolutize`.
 - Code style: match the surrounding code (Java 21 records/switch expressions in core, Java 8 in api/testmod),
