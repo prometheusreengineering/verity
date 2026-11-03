@@ -115,12 +115,17 @@ final class SettingsTab {
         r = Fx.row(g, r, "Total timeout (s)", spinner(10, 14400, p.test.timeoutSec, 60, v -> p.test.timeoutSec = v),
                 "Fail if Verity.finish() was not called by then.");
         r = Fx.row(g, r, "Shutdown grace (s)", spinner(0, 120, p.test.shutdownGraceSec, 1, v -> p.test.shutdownGraceSec = v), null);
+        r = Fx.row(g, r, "Smoke test (s)", spinner(0, 3600, p.test.smokeSec, 30, v -> p.test.smokeSec = v),
+                "Modded targets pass after running this long without crashing, unless the mod reports through verity-api. "
+                        + "0 = the mod must report through verity-api.");
         r = Fx.row(g, r, "Vanilla smoke (s)", spinner(0, 3600, p.test.vanillaSmokeSec, 10, v -> p.test.vanillaSmokeSec = v),
                 "Vanilla cannot load mods: a vanilla client passes after running this long without crashing. 0 = require verity-api.");
 
         r = section(g, r, "Run");
         r = Fx.row(g, r, "Max parallel", spinner(0, 64, p.run.maxParallel, 1, v -> p.run.maxParallel = v), "0 = automatic (CPU cores and memory).");
         r = Fx.row(g, r, "", check("Keep instances between runs (worlds, configs)", p.run.keepInstances, v -> p.run.keepInstances = v), null);
+        r = Fx.row(g, r, "", check("Skip targets where a mod has no file (e.g. no Modrinth build for that version)",
+                p.run.onlyTargetsWithAllMods, v -> p.run.onlyTargetsWithAllMods = v), null);
         Fx.row(g, r, "", check("Sandbox the user home (mods cannot touch your real profile / .minecraft)", p.run.isolateHome,
                 v -> p.run.isolateHome = v), null);
         root.setContent(g);

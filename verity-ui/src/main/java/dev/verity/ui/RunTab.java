@@ -204,8 +204,10 @@ final class RunTab {
         }
         lastReport = r;
         reportButton.setDisable(false);
-        summary.setText(r.passed() + "/" + r.results.size() + " passed");
-        status.accept("Run finished: " + r.passed() + "/" + r.results.size() + " passed · " + r.runDir);
+        long skipped = r.count(Status.SKIPPED);
+        String text = r.passed() + "/" + (r.results.size() - skipped) + " passed" + (skipped > 0 ? " (" + skipped + " skipped)" : "");
+        summary.setText(text);
+        status.accept("Run finished: " + text + " · " + r.runDir);
     }
 
     private void select(String id) {

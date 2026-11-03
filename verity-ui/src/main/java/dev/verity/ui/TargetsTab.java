@@ -67,7 +67,9 @@ final class TargetsTab {
         });
         on.setPrefWidth(50);
         TableColumn<Profile.TargetSpec, String> kind = col("Type", t -> t.select != null ? "Range" : "Version", 80);
-        TableColumn<Profile.TargetSpec, String> mc = col("Minecraft", t -> t.select != null ? t.select.minecraft : t.minecraft, 160);
+        TableColumn<Profile.TargetSpec, String> mc = col("Minecraft", t -> t.select == null ? t.minecraft
+                : (t.select.modrinth != null && !t.select.modrinth.isEmpty() ? "on Modrinth: " + String.join(", ", t.select.modrinth)
+                        + ("*".equals(t.select.minecraft) ? "" : ", " + t.select.minecraft) : t.select.minecraft), 220);
         TableColumn<Profile.TargetSpec, String> loader = col("Loader", t -> t.select != null
                 ? (t.select.loaders.isEmpty() ? "vanilla" : t.select.loaders.stream().map(LoaderType::displayName).collect(Collectors.joining(", ")))
                 : (t.loader == null ? "Vanilla" : t.loader.displayName()), 200);
@@ -267,6 +269,8 @@ final class TargetsTab {
         limit.setEditable(true);
         TextField lv = new TextField(t.select.loaderVersion == null ? "" : t.select.loaderVersion);
         lv.setPromptText("recommended");
+        TextField modrinth = new TextField(String.join(", ", t.select.modrinth == null ? List.of() : t.select.modrinth));
+        modrinth.setPromptText("e.g. essential   (optional)");
         Label preview = Fx.hint("");
         Runnable update = () -> {
             Profile tmp = new Profile();
@@ -276,13 +280,17 @@ final class TargetsTab {
             s.select.latestPatchOnly = latestPatch.isSelected();
             s.select.limit = limit.getValue();
             for (CheckBox cb : loaders) if (cb.isSelected()) s.select.loaders.add((LoaderType) cb.getUserData());
+            s.select.modrinth = projects(modrinth.getText());
+            tmp.mods = model.selected.get() == null ? new ArrayList<>() : model.selected.get().mods; // for Modrinth channels
             tmp.targets.add(s);
             preview.setText("Calculating…");
-            Fx.async(() -> new TargetExpander(TargetExpander.Catalog.of(model.ctx.meta())).expand(tmp),
+            Fx.async(() -> new TargetExpander(TargetExpander.Catalog.of(model.ctx.meta(),
+                            new dev.verity.core.modrinth.ModrinthResolver(model.ctx.modrinth()))).expand(tmp),
                     list -> preview.setText(list.size() + " target(s): " + list.stream().map(Target::id).collect(Collectors.joining(", "))),
                     err -> preview.setText("Cannot expand: " + err.getMessage()));
         };
         range.textProperty().addListener((o, a, b) -> update.run());
+        modrinth.textProperty().addListener((o, a, b) -> update.run());
         latestPatch.setOnAction(e -> update.run());
         limit.valueProperty().addListener((o, a, b) -> update.run());
         loaders.forEach(cb -> cb.setOnAction(e -> update.run()));
@@ -290,7 +298,9 @@ final class TargetsTab {
 
         GridPane g = Fx.form();
         int r = Fx.row(g, 0, "Minecraft range", range, "Examples: >=1.20 · 1.20.x · >=1.16 <1.21 · [1.8.9,1.12.2] · latest · *");
-        r = Fx.row(g, r, "Loaders", loaderBox, "No loader selected = vanilla.");
+        r = Fx.row(g, r, "Loaders", loaderBox, "No loader selected = vanilla (or, with Modrinth projects below, every loader they support).");
+        r = Fx.row(g, r, "Only on Modrinth for", modrinth,
+                "Comma separated Modrinth projects: keep only the version/loader pairs all of them publish files for.");
         r = Fx.row(g, r, "", latestPatch, null);
         r = Fx.row(g, r, "Max versions", limit, "Keep only the N newest per loader (0 = no limit).");
         r = Fx.row(g, r, "Loader version", lv, null);
@@ -304,11 +314,18 @@ final class TargetsTab {
             for (CheckBox cb : loaders) if (cb.isSelected()) t.select.loaders.add((LoaderType) cb.getUserData());
             t.select.latestPatchOnly = latestPatch.isSelected();
             t.select.limit = limit.getValue();
+            t.select.modrinth = projects(modrinth.getText());
             t.select.loaderVersion = lv.getText().isBlank() ? null : lv.getText().trim();
             if (existing == null) model.selected.get().targets.add(t);
             refresh();
             model.changed();
         });
+    }
+
+    private static List<String> projects(String text) {
+        List<String> out = new ArrayList<>();
+        for (String x : text.split("[,\\s]+")) if (!x.isBlank()) out.add(x.trim());
+        return out;
     }
 
     private void preview() {

@@ -18,7 +18,8 @@
 .status-FAILED, .status-CRASHED, .status-ERROR { -fx-text-fill: -color-danger-fg; }
 .status-TIMED_OUT, .status-CANCELLED { -fx-text-fill: -color-warning-fg; }
 .status-RUNNING, .status-LAUNCHING, .status-PREPARING, .status-QUEUED { -fx-text-fill: -color-accent-fg; }
-.status-PENDING { -fx-text-fill: -color-fg-muted; }
+.status-PENDING, .status-SKIPPED { -fx-text-fill: -color-fg-muted; }
+.target-card.state-SKIPPED { -fx-opacity: 0.6; }
 .target-card.state-PASSED, .target-card.state-PREPARED { -fx-border-color: -color-success-emphasis; }
 .target-card.state-FAILED, .target-card.state-CRASHED, .target-card.state-ERROR { -fx-border-color: -color-danger-emphasis; }
 .target-card.state-TIMED_OUT { -fx-border-color: -color-warning-emphasis; }

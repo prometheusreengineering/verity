@@ -1,13 +1,14 @@
 package dev.verity.ui;
 
 import dev.verity.core.meta.LoaderType;
+import dev.verity.core.modrinth.ModrinthResolver;
+import dev.verity.core.mods.ModPlanner;
 import dev.verity.core.mods.ModResolver;
 import dev.verity.core.profile.Profile;
 import dev.verity.core.run.RunOptions;
 import dev.verity.core.run.Target;
 import java.io.File;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -39,7 +40,7 @@ final class ModsTab {
     private final Stage stage;
     private final SplitPane root = new SplitPane();
     private final TableView<Profile.ModEntry> table = new TableView<>();
-    private final TableView<Map.Entry<Target, List<ModResolver.Decision>>> preview = new TableView<>();
+    private final TableView<ModPlanner.TargetPlan> preview = new TableView<>();
     private final Label previewStatus = Fx.hint("");
 
     ModsTab(AppModel model, Stage stage) {
@@ -47,9 +48,19 @@ final class ModsTab {
         this.stage = stage;
         table.setEditable(true);
 
-        TableColumn<Profile.ModEntry, String> path = new TableColumn<>("Path (file, folder or glob)");
-        path.setCellValueFactory(c -> new ReadOnlyObjectWrapper<>(c.getValue().path));
-        path.setCellFactory(TextFieldTableCell.forTableColumn());
+        TableColumn<Profile.ModEntry, String> path = new TableColumn<>("Mod (path, folder, glob or Modrinth project)");
+        path.setCellValueFactory(c -> new ReadOnlyObjectWrapper<>(c.getValue().fromModrinth()
+                ? "Modrinth: " + c.getValue().modrinth + (c.getValue().version != null ? " @" + c.getValue().version : "")
+                        + (c.getValue().channel != null && !"release".equals(c.getValue().channel) ? " [" + c.getValue().channel + "]" : "")
+                : c.getValue().path));
+        path.setCellFactory(col -> new TextFieldTableCell<>(new javafx.util.converter.DefaultStringConverter()) {
+            @Override
+            public void startEdit() {
+                // Modrinth entries are edited through the Modrinth dialog, not as text.
+                if (getTableRow() != null && getTableRow().getItem() != null && getTableRow().getItem().fromModrinth()) return;
+                super.startEdit();
+            }
+        });
         path.setOnEditCommit(e -> {
             e.getRowValue().path = e.getNewValue();
             changed();
@@ -140,6 +151,16 @@ final class ModsTab {
             d.setHeaderText("A glob is re-evaluated on every run, so rebuilt jars with new version numbers are picked up.");
             d.showAndWait().filter(s -> !s.isBlank()).ifPresent(s -> add(s.trim()));
         });
+        Button fromModrinth = new Button("Add from Modrinth…");
+        fromModrinth.setOnAction(e -> {
+            Profile p = model.selected.get();
+            if (p == null) return;
+            new ModrinthDialog(model, stage).show().ifPresent(entry -> {
+                p.mods.add(entry);
+                refresh();
+                changed();
+            });
+        });
         Button remove = new Button("Remove");
         remove.disableProperty().bind(table.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> {
@@ -153,26 +174,30 @@ final class ModsTab {
         VBox top = new VBox(8, Fx.hint("Rules (\"Only loaders\", \"Only Minecraft\") override metadata detection. Without rules, Verity reads "
                 + "fabric.mod.json / mods.toml / neoforge.mods.toml / mcmod.info to install each jar only where it fits; "
                 + "jars without metadata go everywhere. Relative paths resolve against the profile file."),
-                new HBox(8, files, folder, glob, remove), table);
+                new HBox(8, files, folder, glob, fromModrinth, remove), table);
         top.setPadding(new Insets(12));
 
-        TableColumn<Map.Entry<Target, List<ModResolver.Decision>>, String> tcol = new TableColumn<>("Target");
-        tcol.setCellValueFactory(c -> new ReadOnlyObjectWrapper<>(c.getValue().getKey().id()));
+        TableColumn<ModPlanner.TargetPlan, String> tcol = new TableColumn<>("Target");
+        tcol.setCellValueFactory(c -> new ReadOnlyObjectWrapper<>(c.getValue().target().id()));
         tcol.setPrefWidth(180);
-        TableColumn<Map.Entry<Target, List<ModResolver.Decision>>, Map.Entry<Target, List<ModResolver.Decision>>> inc = new TableColumn<>("Installed jars");
+        TableColumn<ModPlanner.TargetPlan, ModPlanner.TargetPlan> inc = new TableColumn<>("Installed jars");
         inc.setCellValueFactory(c -> new ReadOnlyObjectWrapper<>(c.getValue()));
         inc.setCellFactory(c -> new TableCell<>() {
             @Override
-            protected void updateItem(Map.Entry<Target, List<ModResolver.Decision>> e, boolean empty) {
+            protected void updateItem(ModPlanner.TargetPlan e, boolean empty) {
                 super.updateItem(e, empty);
                 if (empty || e == null) {
                     setText(null);
                     setTooltip(null);
                     return;
                 }
-                setText(e.getValue().stream().filter(ModResolver.Decision::included).map(d -> d.mod().path().getFileName().toString())
-                        .collect(Collectors.joining(", ")));
-                setTooltip(new Tooltip(e.getValue().stream().map(d -> (d.included() ? "+ " : "- ") + d.mod().path().getFileName() + "  (" + d.reason() + ")")
+                Profile p = model.selected.get();
+                boolean skip = p != null && p.run.onlyTargetsWithAllMods && !e.missingEntries().isEmpty();
+                String jars = e.included().stream().map(ModPlanner.PlannedMod::fileName).collect(Collectors.joining(", "));
+                String missing = e.missingEntries().isEmpty() ? "" : "nothing from " + String.join(", ", e.missingEntries());
+                setText(skip ? "SKIPPED: " + missing : jars + (missing.isEmpty() ? "" : (jars.isEmpty() ? "" : "   ·   ") + missing));
+                setStyle(skip ? "-fx-opacity: 0.55;" : "");
+                setTooltip(new Tooltip(e.mods().stream().map(d -> (d.included() ? "+ " : "- ") + d.fileName() + "  (" + d.reason() + ")")
                         .collect(Collectors.joining("\n"))));
             }
         });
@@ -231,12 +256,12 @@ final class ModsTab {
         Fx.async(() -> {
             List<Target> targets = model.orchestrator.targets(p, new RunOptions());
             List<ModResolver.ModFile> mods = ModResolver.expand(p);
-            Map<Target, List<ModResolver.Decision>> out = new LinkedHashMap<>();
-            for (Target t : targets) out.put(t, ModResolver.decide(mods, t));
-            return out;
+            return ModPlanner.plan(p, targets, mods, new ModrinthResolver(model.ctx.modrinth()), model.home);
         }, map -> {
-            preview.setItems(FXCollections.observableArrayList(map.entrySet()));
-            previewStatus.setText("Hover a row to see why each jar is in or out.");
+            preview.setItems(FXCollections.observableArrayList(map.values()));
+            long skipped = p.run.onlyTargetsWithAllMods ? map.values().stream().filter(t -> !t.missingEntries().isEmpty()).count() : 0;
+            previewStatus.setText(map.size() + " target(s)" + (skipped > 0 ? ", " + skipped + " skipped because a mod has no file" : "")
+                    + ". Hover a row to see why each jar is in or out.");
         }, err -> {
             preview.getItems().clear();
             previewStatus.setText(err.getMessage());
