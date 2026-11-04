@@ -223,6 +223,32 @@ class RunOrchestratorTest {
     }
 
     @Test
+    void aClientWithoutAnyGraphicsBackendCrashesInsteadOfPassingOrTimingOut() throws Exception {
+        VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
+        Profile p = fakeProfile(home, "fake-nobackend");
+        p.test.vanillaSmokeSec = 30; // would pass by surviving without the backend check
+        RunOptions opts = new RunOptions();
+        opts.displayProvider = NO_DISPLAY;
+        opts.reportDir = tmp.resolve("report");
+        RunReport report = new RunOrchestrator(context(home)).start(p, opts, new RunListener() {
+        }).report().get(120, TimeUnit.SECONDS);
+
+        TargetResult r = report.results.get(0);
+        assertThat(r.status).as(r.message).isEqualTo(Status.CRASHED);
+        assertThat(r.message).contains("could not start any graphics backend").contains("OpenGL and Vulkan");
+        assertThat(r.durationMs).isLessThan(25_000);
+    }
+
+    @Test
+    void backendEvents() {
+        assertThat(ClientSession.backendEvent("[01:16:33] [Render thread/ERROR] [minecraft/Minecraft]: Failed to create backend Vulkan"))
+                .isEqualTo("Vulkan");
+        assertThat(ClientSession.backendEvent("[21:00:14] [Render thread/INFO]: Using graphics backend OpenGL, using drivers: 4.5"))
+                .isEmpty();
+        assertThat(ClientSession.backendEvent("[main/INFO]: Setting user: Verity")).isNull();
+    }
+
+    @Test
     void aThrowingListenerCannotHangTheRun() throws Exception {
         VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
         Profile p = fakeProfile(home, "fake-pass");

@@ -8,11 +8,13 @@ name: Full matrix
 on:
   schedule:
     - cron: "17 3 * * *"
-  # PRs that change the matrix itself (manual dispatch only works once a workflow is on the default branch).
+  # PRs that change the matrix itself, or the display code, whose window/GL problems are version-specific and
+  # the 7-target PR run can miss. (Manual dispatch only works once a workflow is on the default branch.)
   pull_request:
     paths:
       - .github/workflows/full-matrix.yml
       - samples/testmod/verity-full.json
+      - verity-core/src/main/java/dev/verity/core/display/**
   workflow_dispatch:
     inputs:
       loader:

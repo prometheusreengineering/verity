@@ -52,6 +52,10 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
   1.14-1.18 list LWJGL twice (macOS 3.2.1, others 3.2.2), and rules pick one.
 - Mojang's Java 16.0.1/17.0.1 runtimes (`java-runtime-alpha`/`beta`, MC 1.17-1.18) crash in the JIT on AVX-512 CPUs,
   so `LaunchCommandBuilder` adds `-XX:UseAVX=2` for them (x86 only).
+- Minecraft 26.3+ opens its window with SDL3 and asks for an sRGB-capable GL framebuffer, which Xvfb's GLX visuals
+  lack, so `XvfbDisplay` sets `SDL_VIDEO_FORCE_EGL=1`. Without a working OpenGL or Vulkan backend the game hangs on a
+  dialog (and a mod that connects early would still pass), so `ClientSession` reports CRASHED when the log shows both
+  failed.
 - Cached files can be torn by a crash or power loss: right size, garbage content. Installer jars have no checksum
   (they're re-downloaded if they don't open as a zip), and child jars and installer-extracted libraries are compared
   by content, not size.

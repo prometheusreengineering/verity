@@ -69,6 +69,9 @@ public final class ClientSession {
     private final Deque<String> tail = new ArrayDeque<>();
     private final CompletableFuture<String> outcome = new CompletableFuture<>();
     private final AtomicBoolean connected = new AtomicBoolean();
+    /** Minecraft 26.3+ graphics backends that failed to start, from the game log. */
+    private final java.util.Set<String> failedBackends = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private volatile boolean backendUp;
     private volatile Status status = Status.PENDING;
     private volatile GameProcess process;
 
@@ -281,6 +284,13 @@ public final class ClientSession {
                         message = "Ran " + smokeSec + "s without crashing (" + (target.loader() == LoaderType.VANILLA ? "vanilla smoke test)"
                                 : "smoke test with " + mods.size() + " mod" + (mods.size() == 1 ? "" : "s") + ")");
                     }
+                    case "no-backend" -> {
+                        // The game sits on an error dialog forever after this, so don't wait for a timeout.
+                        p.stop(Duration.ofSeconds(3));
+                        finalStatus = Status.CRASHED;
+                        message = "Minecraft could not start any graphics backend (" + String.join(" and ",
+                                new java.util.TreeSet<>(failedBackends)) + " failed; see the game log)";
+                    }
                     case "startup-timeout" -> {
                         p.stop(Duration.ofSeconds(3));
                         finalStatus = Status.TIMED_OUT;
@@ -378,7 +388,32 @@ public final class ClientSession {
         }
     }
 
+    private static final java.util.regex.Pattern BACKEND_FAILED = java.util.regex.Pattern.compile("Failed to create backend (\\w+)");
+    private static final java.util.Set<String> ALL_BACKENDS = java.util.Set.of("OpenGL", "Vulkan");
+
+    /**
+     * For 26.3+ logs: the backend named by a "Failed to create backend X" line, "" for "Using graphics backend", else
+     * null. The game tries each backend in turn and, when none starts, shows a dialog and never exits.
+     */
+    static String backendEvent(String line) {
+        if (line.contains("Using graphics backend ")) return "";
+        java.util.regex.Matcher m = BACKEND_FAILED.matcher(line);
+        return m.find() ? m.group(1) : null;
+    }
+
+    private void trackBackends(String line) {
+        String ev = backendEvent(line);
+        if (ev == null) return;
+        if (ev.isEmpty()) {
+            backendUp = true;
+            return;
+        }
+        failedBackends.add(ev);
+        if (!backendUp && failedBackends.containsAll(ALL_BACKENDS)) outcome.complete("no-backend");
+    }
+
     private void emit(String line, BufferedWriter out) throws IOException {
+        trackBackends(line);
         out.write(line);
         out.newLine();
         out.flush();

@@ -50,6 +50,15 @@ public class FakeGame {
                 System.exit(-1);
             }
             case "fake-idle" -> Thread.sleep(60_000); // vanilla-like: never talks to Verity
+            case "fake-nobackend" -> {
+                // 26.3+ with no working renderer: both backends fail, then the game waits on a dialog forever.
+                Verity.pass("loaded");
+                System.out.println("[Render thread/ERROR] [minecraft/Minecraft]: Failed to create backend OpenGL");
+                System.out.println("com.mojang.renderpearl.api.device.BackendCreationException: Couldn't find matching GLX visual");
+                System.out.println("[Render thread/ERROR] [minecraft/Minecraft]: Failed to create backend Vulkan");
+                System.out.flush();
+                Thread.sleep(60_000);
+            }
             default -> System.exit(0); // exits without finish
         }
     }

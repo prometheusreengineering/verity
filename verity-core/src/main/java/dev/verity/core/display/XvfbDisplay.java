@@ -90,6 +90,9 @@ public final class XvfbDisplay implements DisplayProvider {
             env.put("LIBGL_ALWAYS_SOFTWARE", "1");
             env.put("GALLIUM_DRIVER", "llvmpipe");
         }
+        // Minecraft 26.3+ creates its window through SDL3 and asks for an sRGB-capable framebuffer, which Xvfb's GLX
+        // visuals don't offer ("Couldn't find matching GLX visual"). Mesa's EGL on X11 does. GLFW versions ignore this.
+        env.put("SDL_VIDEO_FORCE_EGL", "1");
         return new DisplaySession() {
             @Override
             public Map<String, String> environment() {
