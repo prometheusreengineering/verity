@@ -1,0 +1,84 @@
+name: Full matrix
+
+# The sample mod on the newest patch of every minor Minecraft version each loader supports
+# (samples/testmod/verity-full.json: Forge >=1.7.10, Fabric >=1.14, NeoForge >=1.20.2). The selectors resolve
+# against live metadata, so new Minecraft releases join automatically. Too slow for every PR (ci.yml covers a
+# 7-target subset there); runs nightly to catch upstream metadata/installer changes, and on demand.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      loader:
+        description: Loader to run
+        type: choice
+        options: [all, forge, fabric, neoforge]
+        default: all
+      minecraft:
+        description: Only this Minecraft version (e.g. 1.7.10, 26.3); pick a loader that has it. Empty runs all
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-matrix
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build jars
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build
+        run: ./gradlew :verity-cli:shadowJar :samples:testmod:shadowJar --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: full-matrix-jars
+          path: |
+            verity-cli/build/libs/verity-cli-*-all.jar
+            samples/testmod/build/libs/verity-testmod-*.jar
+          if-no-files-found: error
+
+  e2e:
+    name: ${{ matrix.loader }} (${{ matrix.os }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        # Scheduled runs have no inputs: every loader.
+        loader: ${{ fromJSON((inputs.loader == '' || inputs.loader == 'all') && '["forge","fabric","neoforge"]' || format('["{0}"]', inputs.loader)) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: full-matrix-jars
+          path: jars
+      - name: Place jars
+        id: jars
+        shell: bash
+        run: |
+          mkdir -p samples/testmod/build/libs
+          cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
+          if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
+          echo "cli=$jar" >> "$GITHUB_OUTPUT"
+      - name: Run Verity
+        uses: ./
+        with:
+          profile: samples/testmod/verity-full.json
+          jar: ${{ steps.jars.outputs.cli }}
+          # Target ids are <minecraft>-<loader>; filters are OR'ed, so combine the version and loader into one.
+          only: ${{ inputs.minecraft != '' && format('{0}-{1}', inputs.minecraft, matrix.loader) || matrix.loader }}
+          parallel: "3"

@@ -76,8 +76,10 @@ runs:
           ${{ runner.temp }}/verity-home/runtimes
           ${{ runner.temp }}/verity-home/installers
           ${{ runner.temp }}/verity-home/tools
-        key: verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-${{ github.run_id }}
+        # "only" is part of the key so parallel jobs that shard one profile keep separate caches.
+        key: verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-${{ inputs.only }}-${{ github.run_id }}
         restore-keys: |
+          verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-${{ inputs.only }}-
           verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-
           verity-${{ runner.os }}-
 
