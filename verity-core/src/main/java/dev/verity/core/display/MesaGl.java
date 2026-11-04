@@ -61,20 +61,26 @@ public final class MesaGl {
         Path x64 = dir.resolve("x64");
         return ctx.locks().withLock("mesa", () -> {
             if (Files.isRegularFile(x64.resolve("opengl32.dll"))) return x64;
-            // Every client of a run asks; after one failure the rest skip straight to the fallback.
-            IOException failed = FAILURES.get(dir);
-            if (failed != null) throw failed;
+            // Every client of a run asks; after a failure the rest skip straight to the fallback for a while, but a
+            // transient failure (rate limit, network) must not stick for the lifetime of a long-running UI.
+            Failure failed = FAILURES.get(dir);
+            if (failed != null && System.nanoTime() - failed.atNanos() < RETRY_AFTER_NANOS) throw failed.error();
             try {
                 install(dir, x64, progress);
+                FAILURES.remove(dir);
                 return x64;
             } catch (IOException e) {
-                FAILURES.put(dir, e);
+                FAILURES.put(dir, new Failure(e, System.nanoTime()));
                 throw e;
             }
         });
     }
 
-    private static final Map<Path, IOException> FAILURES = new java.util.concurrent.ConcurrentHashMap<>();
+    private record Failure(IOException error, long atNanos) {
+    }
+
+    static final long RETRY_AFTER_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(10);
+    private static final Map<Path, Failure> FAILURES = new java.util.concurrent.ConcurrentHashMap<>();
 
     private void install(Path dir, Path x64, Progress progress) throws Exception {
         progress.stage("Downloading Mesa software OpenGL");

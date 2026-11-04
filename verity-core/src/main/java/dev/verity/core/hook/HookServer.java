@@ -2,9 +2,10 @@ package dev.verity.core.hook;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.verity.core.util.Json;
-import java.io.BufferedReader;
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -21,7 +22,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * token so a connection is attributed to the right target and nothing else on the machine can inject results.
  */
 public final class HookServer implements AutoCloseable {
-    private static final int MAX_LINE = 16 * 1024 * 1024;
+    /** Attachments arrive base64-encoded on one line, so events can be large; the hello line can't. */
+    static final int MAX_LINE = 16 * 1024 * 1024;
+    static final int MAX_HELLO = 64 * 1024;
+    /** Returned by {@link #readLine} for a line over the limit; compared by identity. */
+    static final String TOO_LONG = new String("<too long>");
 
     private final ServerSocket server;
     private final Map<String, HookListener> listeners = new ConcurrentHashMap<>();
@@ -64,18 +69,21 @@ public final class HookServer implements AutoCloseable {
     private void handle(Socket socket) {
         try (socket) {
             socket.setSoTimeout(0);
-            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8), 64 * 1024);
+            InputStream in = new BufferedInputStream(socket.getInputStream(), 64 * 1024);
             OutputStream out = socket.getOutputStream();
-            String first = in.readLine();
-            if (first == null) return;
+            String first = readLine(in, MAX_HELLO);
+            if (first == null || first == TOO_LONG) return;
             JsonNode hello = Json.MAPPER.readTree(first);
             if (!"hello".equals(hello.path("type").asText())) return;
             HookListener l = listeners.get(hello.path("token").asText(""));
             if (l == null) return;
             l.onConnected(hello.path("java").asText(null));
             String line;
-            while ((line = in.readLine()) != null) {
-                if (line.length() > MAX_LINE) continue;
+            while ((line = readLine(in, MAX_LINE)) != null) {
+                if (line == TOO_LONG) {
+                    l.onLog("[verity] dropped a hook message over " + MAX_LINE + " bytes");
+                    continue;
+                }
                 JsonNode n;
                 try {
                     n = Json.MAPPER.readTree(line);
@@ -107,6 +115,29 @@ public final class HookServer implements AutoCloseable {
         } catch (IOException ignored) {
             // client went away; the session notices through process exit
         }
+    }
+
+    /**
+     * Reads one UTF-8 line without buffering more than {@code max} bytes of it: the rest of an oversized line is
+     * skipped and {@link #TOO_LONG} returned. Returns null at end of stream.
+     */
+    static String readLine(InputStream in, int max) throws IOException {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        boolean tooLong = false;
+        int b;
+        while ((b = in.read()) != -1 && b != '\n') {
+            if (tooLong) continue;
+            if (buf.size() >= max) {
+                tooLong = true;
+                buf.reset();
+                continue;
+            }
+            buf.write(b);
+        }
+        if (tooLong) return TOO_LONG;
+        if (b == -1 && buf.size() == 0) return null;
+        String s = buf.toString(StandardCharsets.UTF_8);
+        return s.endsWith("\r") ? s.substring(0, s.length() - 1) : s;
     }
 
     @Override

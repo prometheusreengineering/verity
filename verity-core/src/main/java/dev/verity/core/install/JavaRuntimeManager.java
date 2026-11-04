@@ -51,7 +51,8 @@ public final class JavaRuntimeManager {
                 Path exe = installMojang(component, platform, progress);
                 if (exe != null) return exe;
             }
-            return installTemurin(major, progress);
+            // Temurin installs go to temurin-<major>, which several components can share (beta and gamma are both 17).
+            return ctx.locks().withLock("temurin-" + major, () -> installTemurin(major, progress));
         });
     }
 

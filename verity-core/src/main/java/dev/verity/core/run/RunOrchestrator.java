@@ -122,29 +122,41 @@ public final class RunOrchestrator {
                     continue;
                 }
                 CompletableFuture<TargetResult> f = new CompletableFuture<>();
-                Thread.ofVirtual().name("verity-" + t.id()).start(() -> f.complete(s.run(permits, options.prepareOnly)));
+                Thread.ofVirtual().name("verity-" + t.id()).start(() -> {
+                    // run() handles Exceptions itself; anything escaping (an Error, a throwing listener) must still
+                    // complete the future, or the run waits for this target forever.
+                    try {
+                        f.complete(s.run(permits, options.prepareOnly));
+                    } catch (Throwable e) {
+                        f.complete(s.aborted(e));
+                    }
+                });
                 results.add(f);
             }
-            RunReport report = new RunReport();
-            report.profile = profile.name;
-            report.startedAt = started;
-            report.runDir = runDir.toString();
-            report.prepareOnly = options.prepareOnly;
-            report.host = host();
-            for (CompletableFuture<TargetResult> f : results) report.results.add(f.join());
-            report.finishedAt = Instant.now();
             try {
-                hook.close();
-            } catch (IOException ignored) {
-                // closing
+                RunReport report = new RunReport();
+                report.profile = profile.name;
+                report.startedAt = started;
+                report.runDir = runDir.toString();
+                report.prepareOnly = options.prepareOnly;
+                report.host = host();
+                for (CompletableFuture<TargetResult> f : results) report.results.add(f.join());
+                report.finishedAt = Instant.now();
+                try {
+                    hook.close();
+                } catch (IOException ignored) {
+                    // closing
+                }
+                try {
+                    Reports.writeAll(report, runDir);
+                } catch (IOException e) {
+                    listener.warning("Could not write reports: " + e.getMessage());
+                }
+                listener.runFinished(report);
+                future.complete(report);
+            } catch (Throwable e) {
+                future.completeExceptionally(e);
             }
-            try {
-                Reports.writeAll(report, runDir);
-            } catch (IOException e) {
-                listener.warning("Could not write reports: " + e.getMessage());
-            }
-            listener.runFinished(report);
-            future.complete(report);
         });
         RunHandle handle = new RunHandle(future, sessions);
         // On Ctrl+C / SIGTERM: stop every client and give sessions time to kill their game processes and displays.

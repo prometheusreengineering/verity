@@ -342,11 +342,13 @@ public final class ForgeInstaller {
         ZipEntry e = zip.getEntry(name);
         if (e == null) throw new IOException("Installer is missing " + name);
         Files.createDirectories(target.getParent());
-        Path tmp = target.resolveSibling(target.getFileName() + ".extract");
+        Path tmp = target.resolveSibling(target.getFileName() + "." + java.util.UUID.randomUUID() + ".extract");
         try (InputStream in = zip.getInputStream(e)) {
             Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
+            FileUtil.moveAtomically(tmp, target);
+        } finally {
+            Files.deleteIfExists(tmp);
         }
-        FileUtil.moveAtomically(tmp, target);
     }
 
     static JsonNode readJson(ZipFile zip, String name) throws IOException {

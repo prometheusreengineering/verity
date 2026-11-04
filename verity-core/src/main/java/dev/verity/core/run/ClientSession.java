@@ -204,121 +204,127 @@ public final class ClientSession {
 
         HookListener hookListener = new SessionHookListener();
         String token = hook.register(hookListener);
-        Map<String, String> sysProps = new LinkedHashMap<>();
-        sysProps.put(Verity.PROP_PORT, String.valueOf(hook.port()));
-        sysProps.put(Verity.PROP_TOKEN, token);
-        sysProps.put(Verity.PROP_TARGET, target.id());
-        if (profile.run.isolateHome) sysProps.put("user.home", layout.homeDir().toString());
+        // Unregistered on every path, including a display or launch failure, so the listener (and this session) can't leak.
+        try {
+            Map<String, String> sysProps = new LinkedHashMap<>();
+            sysProps.put(Verity.PROP_PORT, String.valueOf(hook.port()));
+            sysProps.put(Verity.PROP_TOKEN, token);
+            sysProps.put(Verity.PROP_TARGET, target.id());
+            if (profile.run.isolateHome) sysProps.put("user.home", layout.homeDir().toString());
 
-        boolean virtualAssets = installer.game().isVirtualAssets(version.version());
-        Path assetsRoot = installer.context().home().assets();
-        Path gameAssets = virtualAssets && version.version().assetIndex != null
-                ? installer.game().virtualAssetsDir(version.version().assetIndex.id) : assetsRoot;
+            boolean virtualAssets = installer.game().isVirtualAssets(version.version());
+            Path assetsRoot = installer.context().home().assets();
+            Path gameAssets = virtualAssets && version.version().assetIndex != null
+                    ? installer.game().virtualAssetsDir(version.version().assetIndex.id) : assetsRoot;
 
-        LaunchRequest req = new LaunchRequest(version, java, layout.gameDir(), layout.nativesDir(),
-                installer.context().home().libraries(), assetsRoot, gameAssets, installer.game().loggingConfig(version.version()),
-                classpath, account, profile.jvm.memoryMb, profile.display.width, profile.display.height,
-                profile.jvm.args, profile.game.args, sysProps);
-        List<String> cmd = LaunchCommandBuilder.build(req, env);
-        Files.writeString(reportDir.resolve("command.txt"), LaunchCommandBuilder.describe(cmd, account.accessToken()));
+            LaunchRequest req = new LaunchRequest(version, java, layout.gameDir(), layout.nativesDir(),
+                    installer.context().home().libraries(), assetsRoot, gameAssets, installer.game().loggingConfig(version.version()),
+                    classpath, account, profile.jvm.memoryMb, profile.display.width, profile.display.height,
+                    profile.jvm.args, profile.game.args, sysProps);
+            List<String> cmd = LaunchCommandBuilder.build(req, env);
+            Files.writeString(reportDir.resolve("command.txt"), LaunchCommandBuilder.describe(cmd, account.accessToken()));
 
-        Path output = reportDir.resolve("output.log");
-        Files.deleteIfExists(output);
-        Files.createFile(output);
-        result.logFile = runDir.relativize(output).toString().replace('\\', '/');
+            Path output = reportDir.resolve("output.log");
+            Files.deleteIfExists(output);
+            Files.createFile(output);
+            result.logFile = runDir.relativize(output).toString().replace('\\', '/');
 
-        try (DisplaySession ds = display.open(target.id(), profile.display)) {
-            String displayDescription = mesaFallback
-                    ? ds.description().replace(" (Mesa llvmpipe)", "") + " (GPU driver, Mesa unavailable)"
-                    : ds.description();
-            result.display = displayDescription;
-            Map<String, String> procEnv = new LinkedHashMap<>(ds.environment());
-            if (profile.run.isolateHome) sandboxEnvironment(procEnv, layout.homeDir());
-            procEnv.putAll(profile.game.env);
+            try (DisplaySession ds = display.open(target.id(), profile.display)) {
+                String displayDescription = mesaFallback
+                        ? ds.description().replace(" (Mesa llvmpipe)", "") + " (GPU driver, Mesa unavailable)"
+                        : ds.description();
+                result.display = displayDescription;
+                Map<String, String> procEnv = new LinkedHashMap<>(ds.environment());
+                if (profile.run.isolateHome) sandboxEnvironment(procEnv, layout.homeDir());
+                procEnv.putAll(profile.game.env);
 
-            GameProcess p = ds.start(new ProcessSpec(cmd, layout.gameDir(), procEnv, output));
-            process = p;
-            setStatus(Status.RUNNING, "Running (pid " + p.pid() + ", " + displayDescription + ")");
-            Thread tailer = Thread.ofVirtual().name("verity-tail-" + target.id()).start(() -> tailOutput(output, p));
+                long launchedAt = System.currentTimeMillis();
+                GameProcess p = ds.start(new ProcessSpec(cmd, layout.gameDir(), procEnv, output));
+                process = p;
+                setStatus(Status.RUNNING, "Running (pid " + p.pid() + ", " + displayDescription + ")");
+                Thread tailer = Thread.ofVirtual().name("verity-tail-" + target.id()).start(() -> tailOutput(output, p));
 
-            p.onExit().thenAccept(code -> outcome.complete("exit"));
-            int smokeSec = target.loader() == LoaderType.VANILLA ? profile.test.vanillaSmokeSec : profile.test.smokeSec;
-            // With a smoke test, a client that never connects passes by surviving, so the connect timeout doesn't apply.
-            if (smokeSec <= 0) {
-                CompletableFuture.delayedExecutor(profile.test.startupTimeoutSec, TimeUnit.SECONDS)
-                        .execute(() -> {
-                            if (!connected.get()) outcome.complete("startup-timeout");
-                        });
-            }
-            CompletableFuture.delayedExecutor(profile.test.timeoutSec, TimeUnit.SECONDS).execute(() -> outcome.complete("timeout"));
-            if (smokeSec > 0) {
-                CompletableFuture.delayedExecutor(smokeSec, TimeUnit.SECONDS).execute(() -> {
-                    if (!connected.get() && p.isAlive()) outcome.complete("smoke");
-                });
-            }
+                p.onExit().thenAccept(code -> outcome.complete("exit"));
+                int smokeSec = target.loader() == LoaderType.VANILLA ? profile.test.vanillaSmokeSec : profile.test.smokeSec;
+                // With a smoke test, a client that never connects passes by surviving, so the connect timeout doesn't apply.
+                if (smokeSec <= 0) {
+                    CompletableFuture.delayedExecutor(profile.test.startupTimeoutSec, TimeUnit.SECONDS)
+                            .execute(() -> {
+                                if (!connected.get()) outcome.complete("startup-timeout");
+                            });
+                }
+                CompletableFuture.delayedExecutor(profile.test.timeoutSec, TimeUnit.SECONDS).execute(() -> outcome.complete("timeout"));
+                if (smokeSec > 0) {
+                    CompletableFuture.delayedExecutor(smokeSec, TimeUnit.SECONDS).execute(() -> {
+                        if (!connected.get() && p.isAlive()) outcome.complete("smoke");
+                    });
+                }
 
-            String why = outcome.get();
-            Status finalStatus;
-            String message;
-            switch (why) {
-                case "finish" -> {
-                    p.stop(Duration.ofSeconds(Math.max(1, profile.test.shutdownGraceSec)));
+                String why = outcome.get();
+                Status finalStatus;
+                String message;
+                switch (why) {
+                    case "finish" -> {
+                        p.stop(Duration.ofSeconds(Math.max(1, profile.test.shutdownGraceSec)));
+                        long failed = checks.stream().filter(c -> !c.passed()).count();
+                        finalStatus = failed > 0 ? Status.FAILED : Status.PASSED;
+                        message = failed > 0 ? failed + " of " + checks.size() + " checks failed"
+                                : checks.isEmpty() ? "Finished" : "All " + checks.size() + " checks passed";
+                    }
+                    case "exit" -> {
+                        finalStatus = null;
+                        message = null;
+                    }
+                    case "smoke" -> {
+                        p.stop(Duration.ofSeconds(Math.max(1, profile.test.shutdownGraceSec)));
+                        finalStatus = Status.PASSED;
+                        message = "Ran " + smokeSec + "s without crashing (" + (target.loader() == LoaderType.VANILLA ? "vanilla smoke test)"
+                                : "smoke test with " + mods.size() + " mod" + (mods.size() == 1 ? "" : "s") + ")");
+                    }
+                    case "startup-timeout" -> {
+                        p.stop(Duration.ofSeconds(3));
+                        finalStatus = Status.TIMED_OUT;
+                        message = "The mod did not connect within " + profile.test.startupTimeoutSec
+                                + "s (did the game load it, and does it call verity-api?)";
+                    }
+                    case "timeout" -> {
+                        p.stop(Duration.ofSeconds(3));
+                        finalStatus = Status.TIMED_OUT;
+                        message = "Did not call Verity.finish() within " + profile.test.timeoutSec + "s";
+                    }
+                    default -> {
+                        p.stop(Duration.ofSeconds(3));
+                        finalStatus = Status.CANCELLED;
+                        message = "Cancelled";
+                    }
+                }
+                Integer exit = null;
+                try {
+                    exit = p.onExit().get(15, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    p.stop(Duration.ZERO);
+                }
+                result.exitCode = exit;
+                tailer.join(Duration.ofSeconds(5));
+                hook.unregister(token);
+
+                List<Path> crashes = collectCrashReports(layout, launchedAt);
+                if (finalStatus == null) {
                     long failed = checks.stream().filter(c -> !c.passed()).count();
-                    finalStatus = failed > 0 ? Status.FAILED : Status.PASSED;
-                    message = failed > 0 ? failed + " of " + checks.size() + " checks failed"
-                            : checks.isEmpty() ? "Finished" : "All " + checks.size() + " checks passed";
+                    if (!crashes.isEmpty() || (exit != null && exit != 0)) {
+                        finalStatus = Status.CRASHED;
+                        message = "Game exited with code " + exit + (crashes.isEmpty() ? "" : " (" + crashes.size() + " crash report"
+                                + (crashes.size() > 1 ? "s" : "") + ")") + crashSummary(crashes);
+                    } else {
+                        finalStatus = Status.FAILED;
+                        message = "Game exited before calling Verity.finish()" + (failed > 0 ? "; " + failed + " checks failed" : "");
+                    }
                 }
-                case "exit" -> {
-                    finalStatus = null;
-                    message = null;
-                }
-                case "smoke" -> {
-                    p.stop(Duration.ofSeconds(Math.max(1, profile.test.shutdownGraceSec)));
-                    finalStatus = Status.PASSED;
-                    message = "Ran " + smokeSec + "s without crashing (" + (target.loader() == LoaderType.VANILLA ? "vanilla smoke test)"
-                            : "smoke test with " + mods.size() + " mod" + (mods.size() == 1 ? "" : "s") + ")");
-                }
-                case "startup-timeout" -> {
-                    p.stop(Duration.ofSeconds(3));
-                    finalStatus = Status.TIMED_OUT;
-                    message = "The mod did not connect within " + profile.test.startupTimeoutSec
-                            + "s (did the game load it, and does it call verity-api?)";
-                }
-                case "timeout" -> {
-                    p.stop(Duration.ofSeconds(3));
-                    finalStatus = Status.TIMED_OUT;
-                    message = "Did not call Verity.finish() within " + profile.test.timeoutSec + "s";
-                }
-                default -> {
-                    p.stop(Duration.ofSeconds(3));
-                    finalStatus = Status.CANCELLED;
-                    message = "Cancelled";
-                }
+                copyGameLog(layout);
+                return finish(finalStatus, message, start);
             }
-            Integer exit = null;
-            try {
-                exit = p.onExit().get(15, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                p.stop(Duration.ZERO);
-            }
-            result.exitCode = exit;
-            tailer.join(Duration.ofSeconds(5));
+        } finally {
             hook.unregister(token);
-
-            List<Path> crashes = collectCrashReports(layout);
-            if (finalStatus == null) {
-                long failed = checks.stream().filter(c -> !c.passed()).count();
-                if (!crashes.isEmpty() || (exit != null && exit != 0)) {
-                    finalStatus = Status.CRASHED;
-                    message = "Game exited with code " + exit + (crashes.isEmpty() ? "" : " (" + crashes.size() + " crash report"
-                            + (crashes.size() > 1 ? "s" : "") + ")") + crashSummary(crashes);
-                } else {
-                    finalStatus = Status.FAILED;
-                    message = "Game exited before calling Verity.finish()" + (failed > 0 ? "; " + failed + " checks failed" : "");
-                }
-            }
-            copyGameLog(layout);
-            return finish(finalStatus, message, start);
         }
     }
 
@@ -342,26 +348,31 @@ public final class ClientSession {
         Path console = reportDir.resolve("console.log");
         try (RandomAccessFile raf = new RandomAccessFile(file.toFile(), "r");
              BufferedWriter out = Files.newBufferedWriter(console, StandardCharsets.UTF_8)) {
-            StringBuilder partial = new StringBuilder();
+            // Split on newline bytes and decode whole lines: a UTF-8 character can straddle two reads, and 0x0A
+            // never occurs inside a multi-byte sequence.
+            java.io.ByteArrayOutputStream partial = new java.io.ByteArrayOutputStream();
             byte[] buf = new byte[64 * 1024];
             boolean exited = false;
             while (true) {
                 int n = raf.read(buf);
                 if (n > 0) {
-                    partial.append(new String(buf, 0, n, StandardCharsets.UTF_8));
-                    int nl;
-                    while ((nl = partial.indexOf("\n")) >= 0) {
-                        String line = partial.substring(0, nl).replace("\r", "");
-                        partial.delete(0, nl + 1);
+                    int from = 0;
+                    for (int i = 0; i < n; i++) {
+                        if (buf[i] != '\n') continue;
+                        partial.write(buf, from, i - from);
+                        String line = partial.toString(StandardCharsets.UTF_8).replace("\r", "");
+                        partial.reset();
+                        from = i + 1;
                         for (String l : parser.accept(line)) emit(l, out);
                     }
+                    partial.write(buf, from, n - from);
                     continue;
                 }
                 if (exited) break;
                 if (!p.isAlive()) exited = true; // one more pass to drain
                 else Thread.sleep(150);
             }
-            if (!partial.isEmpty()) for (String l : parser.accept(partial.toString())) emit(l, out);
+            if (partial.size() > 0) for (String l : parser.accept(partial.toString(StandardCharsets.UTF_8))) emit(l, out);
         } catch (IOException | InterruptedException ignored) {
             // tailing is best effort
         }
@@ -378,18 +389,19 @@ public final class ClientSession {
         listener.targetLog(target, line);
     }
 
-    private List<Path> collectCrashReports(InstancePreparer.Layout layout) {
+    /** Crash reports and JVM error logs written since {@code since}; kept instances still hold older ones. */
+    private List<Path> collectCrashReports(InstancePreparer.Layout layout, long since) {
         List<Path> found = new ArrayList<>();
         try {
             Path crashDir = layout.gameDir().resolve("crash-reports");
             if (Files.isDirectory(crashDir)) {
                 try (var s = Files.list(crashDir)) {
-                    found.addAll(s.filter(f -> f.toString().endsWith(".txt")).toList());
+                    found.addAll(s.filter(f -> f.toString().endsWith(".txt") && writtenSince(f, since)).toList());
                 }
             }
             for (Path dir : List.of(layout.gameDir(), layout.root())) {
                 try (var s = Files.list(dir)) {
-                    found.addAll(s.filter(f -> f.getFileName().toString().startsWith("hs_err_pid")).toList());
+                    found.addAll(s.filter(f -> f.getFileName().toString().startsWith("hs_err_pid") && writtenSince(f, since)).toList());
                 }
             }
             Path dst = reportDir.resolve("crash-reports");
@@ -403,6 +415,15 @@ public final class ClientSession {
             // best effort
         }
         return found;
+    }
+
+    static boolean writtenSince(Path f, long since) {
+        try {
+            // A little slack for coarse file-system timestamps.
+            return Files.getLastModifiedTime(f).toMillis() >= since - 2000;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     /** First "Description:" of a vanilla crash report plus the exception line below it. */
@@ -439,6 +460,25 @@ public final class ClientSession {
             result.logTail = new ArrayList<>(tail);
         }
         setStatus(status, message);
+        return result;
+    }
+
+    /** Result for a run that died on something {@link #run} doesn't handle; doesn't trust the listener. */
+    TargetResult aborted(Throwable e) {
+        status = Status.ERROR;
+        result.status = Status.ERROR;
+        result.message = "Internal error: " + (e.getMessage() != null ? e.getMessage() : e.toString());
+        try {
+            Files.createDirectories(reportDir);
+            Files.writeString(reportDir.resolve("error.txt"), stackTrace(e));
+        } catch (Throwable ignored) {
+            // best effort
+        }
+        try {
+            listener.targetStatus(target, Status.ERROR, result.message);
+        } catch (Throwable ignored) {
+            // the listener may be what failed
+        }
         return result;
     }
 

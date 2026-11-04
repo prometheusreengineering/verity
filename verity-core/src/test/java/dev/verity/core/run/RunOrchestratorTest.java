@@ -176,6 +176,71 @@ class RunOrchestratorTest {
         assertThat(Reports.read(dir).results).hasSize(5);
     }
 
+    private Profile fakeProfile(VerityHome home, String... ids) throws Exception {
+        Path client = clientJar();
+        Profile p = new Profile();
+        p.name = "e2e";
+        p.source = tmp.resolve("e2e.json");
+        for (String id : ids) {
+            seedVersion(home, id, client);
+            p.targets.add(Profile.TargetSpec.of(id, LoaderType.VANILLA));
+        }
+        p.jvm.memoryMb = 512;
+        p.test.timeoutSec = 60;
+        p.test.startupTimeoutSec = 60;
+        p.test.shutdownGraceSec = 1;
+        p.test.vanillaSmokeSec = 4;
+        return p;
+    }
+
+    private InstallContext context(VerityHome home) {
+        GlobalSettings settings = new GlobalSettings();
+        settings.javaOverrides.put(8, System.getProperty("java.home"));
+        return new InstallContext(home, settings, new Http());
+    }
+
+    @Test
+    void ignoresCrashReportsLeftInAKeptInstanceByAnEarlierRun() throws Exception {
+        VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
+        Profile p = fakeProfile(home, "fake-quit");
+        Path old = home.instances().resolve("e2e").resolve("fake-quit-vanilla").resolve("game").resolve("crash-reports")
+                .resolve("crash-old-client.txt");
+        Files.createDirectories(old.getParent());
+        Files.writeString(old, "Description: from last week\n");
+        Files.setLastModifiedTime(old, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - 86_400_000L));
+
+        RunOptions opts = new RunOptions();
+        opts.displayProvider = NO_DISPLAY;
+        opts.keepInstances = true;
+        opts.reportDir = tmp.resolve("report");
+        RunReport report = new RunOrchestrator(context(home)).start(p, opts, new RunListener() {
+        }).report().get(120, TimeUnit.SECONDS);
+
+        TargetResult quit = report.results.get(0);
+        assertThat(quit.status).as(quit.message).isEqualTo(Status.FAILED);
+        assertThat(quit.crashReports).isEmpty();
+        assertThat(old).exists();
+    }
+
+    @Test
+    void aThrowingListenerCannotHangTheRun() throws Exception {
+        VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
+        Profile p = fakeProfile(home, "fake-pass");
+        RunOptions opts = new RunOptions();
+        opts.displayProvider = NO_DISPLAY;
+        opts.reportDir = tmp.resolve("report");
+        RunReport report = new RunOrchestrator(context(home)).start(p, opts, new RunListener() {
+            @Override
+            public void targetStatus(Target target, Status status, String message) {
+                if (status == Status.PASSED || status == Status.ERROR) throw new IllegalStateException("listener broke");
+            }
+        }).report().get(120, TimeUnit.SECONDS);
+
+        TargetResult r = report.results.get(0);
+        assertThat(r.status).isEqualTo(Status.ERROR);
+        assertThat(r.message).contains("listener broke");
+    }
+
     @Test
     void modrinthModsSkipTargetsWithoutFilesAndSmokeTestTheRest() throws Exception {
         try (dev.verity.core.modrinth.FakeModrinth fake = dev.verity.core.modrinth.FakeModrinth.essential(tmp.resolve("modrinth"))) {

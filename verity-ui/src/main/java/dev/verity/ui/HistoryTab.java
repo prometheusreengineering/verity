@@ -52,7 +52,7 @@ final class HistoryTab {
                 + c.getValue().results.size() + " passed"));
         TableColumn<RunReport, String> failed = new TableColumn<>("Not passing");
         failed.setCellValueFactory(c -> new ReadOnlyObjectWrapper<>(String.join(", ", c.getValue().results.stream()
-                .filter(r -> !r.success()).map(r -> r.id + " (" + r.status.name().toLowerCase() + ")").toList())));
+                .filter(r -> !r.success()).map(r -> r.id + " (" + (r.status == null ? "unknown" : r.status.name().toLowerCase()) + ")").toList())));
         table.getColumns().addAll(List.of(when, profile, result, failed));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         table.setPlaceholder(new Label("No runs yet"));
