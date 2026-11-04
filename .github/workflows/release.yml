@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build jars and app image
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          ./gradlew -Pversion="$version" build :verity-cli:shadowJar :verity-app:shadowJar :verity-app:jpackageImage :samples:testmod:shadowJar
+          mkdir -p dist
+          cp verity-app/build/libs/verity-*.jar dist/
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            cp verity-cli/build/libs/verity-cli-*-all.jar dist/verity-cli.jar
+            cp verity-api/build/libs/verity-api-"$version".jar dist/
+            (cd verity-app/build/jpackage && tar czf ../../../dist/Verity-linux-x64.tar.gz Verity)
+          else
+            (cd verity-app/build/jpackage && 7z a ../../../dist/Verity-windows-x64.zip Verity > /dev/null)
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: dist/*
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

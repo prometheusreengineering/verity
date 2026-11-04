@@ -1,0 +1,21 @@
+{
+  "id": "1.8.9",
+  "type": "release",
+  "mainClass": "net.minecraft.client.main.Main",
+  "minecraftArguments": "--username ${auth_player_name} --version ${version_name} --gameDir ${game_directory} --assetsDir ${assets_root} --assetIndex ${assets_index_name} --uuid ${auth_uuid} --accessToken ${auth_access_token} --userProperties ${user_properties} --userType ${user_type}",
+  "assetIndex": {"id": "1.8", "sha1": "f6ad102bcaa53b1a58358f16e376d548d44933ec", "size": 78494, "totalSize": 114885064, "url": "https://launchermeta.mojang.com/v1/packages/f6ad102bcaa53b1a58358f16e376d548d44933ec/1.8.json"},
+  "assets": "1.8",
+  "downloads": {"client": {"sha1": "3870888a6c3d349d3771a3e9d16c9bf5e076b908", "size": 8461484, "url": "https://launcher.mojang.com/v1/objects/3870888a6c3d349d3771a3e9d16c9bf5e076b908/client.jar"}},
+  "libraries": [
+    {"name": "com.google.guava:guava:17.0", "downloads": {"artifact": {"path": "com/google/guava/guava/17.0/guava-17.0.jar", "sha1": "9c6ef172e8de35fd8d4d8783e4821e57cdef7445", "size": 2243036, "url": "https://libraries.minecraft.net/com/google/guava/guava/17.0/guava-17.0.jar"}}},
+    {"name": "org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209", "rules": [{"action": "allow"}, {"action": "disallow", "os": {"name": "osx"}}],
+     "downloads": {"artifact": {"path": "org/lwjgl/lwjgl/lwjgl/2.9.4-nightly-20150209/lwjgl-2.9.4-nightly-20150209.jar", "sha1": "697517568c68e78ae0b4544145af031c81082dfe", "size": 1047168, "url": "https://libraries.minecraft.net/org/lwjgl/lwjgl/lwjgl/2.9.4-nightly-20150209/lwjgl-2.9.4-nightly-20150209.jar"}}},
+    {"name": "org.lwjgl.lwjgl:lwjgl-platform:2.9.4-nightly-20150209", "extract": {"exclude": ["META-INF/"]},
+     "natives": {"linux": "natives-linux", "osx": "natives-osx", "windows": "natives-windows"},
+     "rules": [{"action": "allow"}, {"action": "disallow", "os": {"name": "osx"}}],
+     "downloads": {"classifiers": {
+        "natives-linux": {"path": "org/lwjgl/lwjgl/lwjgl-platform/2.9.4-nightly-20150209/lwjgl-platform-2.9.4-nightly-20150209-natives-linux.jar", "sha1": "931074f46c795d2f7b30ed6395df5715cfd7675b", "size": 578680, "url": "https://libraries.minecraft.net/org/lwjgl/lwjgl/lwjgl-platform/2.9.4-nightly-20150209/lwjgl-platform-2.9.4-nightly-20150209-natives-linux.jar"},
+        "natives-windows": {"path": "org/lwjgl/lwjgl/lwjgl-platform/2.9.4-nightly-20150209/lwjgl-platform-2.9.4-nightly-20150209-natives-windows.jar", "sha1": "b84d5102b9dbfabfeb5e43c7e2828d98a7fc80e0", "size": 613748, "url": "https://libraries.minecraft.net/org/lwjgl/lwjgl/lwjgl-platform/2.9.4-nightly-20150209/lwjgl-platform-2.9.4-nightly-20150209-natives-windows.jar"}}}},
+    {"name": "tv.twitch:twitch-platform:6.5:natives", "natives": {"windows": "natives-windows-${arch}"}, "rules": [{"action": "allow", "os": {"name": "windows"}}]}
+  ]
+}

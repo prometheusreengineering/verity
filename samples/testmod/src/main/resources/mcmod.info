@@ -1,0 +1,7 @@
+[{
+  "modid": "veritysample",
+  "name": "Verity sample",
+  "description": "Reports to Verity that it was loaded.",
+  "version": "${version}",
+  "mcversion": "*"
+}]

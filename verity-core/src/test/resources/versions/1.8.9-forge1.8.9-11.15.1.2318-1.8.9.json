@@ -1,0 +1,15 @@
+{
+  "id": "1.8.9-forge1.8.9-11.15.1.2318-1.8.9",
+  "inheritsFrom": "1.8.9",
+  "jar": "1.8.9",
+  "type": "release",
+  "mainClass": "net.minecraft.launchwrapper.Launch",
+  "minecraftArguments": "--username ${auth_player_name} --version ${version_name} --gameDir ${game_directory} --assetsDir ${assets_root} --assetIndex ${assets_index_name} --uuid ${auth_uuid} --accessToken ${auth_access_token} --userProperties ${user_properties} --userType ${user_type} --tweakClass net.minecraftforge.fml.common.launcher.FMLTweaker --versionType Forge",
+  "libraries": [
+    {"name": "net.minecraftforge:forge:1.8.9-11.15.1.2318-1.8.9", "url": "http://files.minecraftforge.net/maven/"},
+    {"name": "net.minecraft:launchwrapper:1.12", "serverreq": true},
+    {"name": "com.google.guava:guava:17.0", "serverreq": true, "clientreq": true},
+    {"name": "org.scala-lang:scala-library:2.11.1", "url": "http://files.minecraftforge.net/maven/", "checksums": ["0a9fd7e3c8e1e6ca8f3ad3e0f1d2b8c3d1d8b8a2"], "serverreq": true, "clientreq": true},
+    {"name": "lzma:lzma:0.0.1", "serverreq": true, "clientreq": false}
+  ]
+}

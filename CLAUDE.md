@@ -1,0 +1,74 @@
+# CLAUDE.md
+
+Verity launches many Minecraft clients (vanilla, Fabric, Forge, NeoForge; 1.7.10 → year-versioned 26.x) in parallel,
+headless or windowed, to test version/loader-independent mods. The mod reports results through `verity-api`. See
+`README.md` for user-facing docs and `docs/integrating-minecraft-essential.md` for the reference integration.
+
+## Build and test
+
+```bash
+./gradlew build                        # all modules + unit tests (Java 21 toolchain)
+./gradlew :verity-core:test --tests '*RunOrchestratorTest*'
+./gradlew :verity-app:run              # desktop UI
+./gradlew :verity-cli:shadowJar        # verity-cli/build/libs/verity-cli-<v>-all.jar (no JavaFX; used by CI/action)
+./gradlew :verity-app:shadowJar        # verity-<v>-<os>.jar (UI + CLI)
+./gradlew :samples:testmod:shadowJar   # universal sample mod used by the e2e matrix
+```
+
+- Tests tagged `e2e` are excluded unless `-Pe2e` is passed. `XvfbDisplayTest` skips itself without Xvfb.
+- `RunOrchestratorTest` runs the whole pipeline against fake game JVMs (`FakeGame`) from a pre-seeded home, so it
+  needs no network. Use that pattern for anything touching install/launch/session logic.
+- Real Minecraft is only exercised by the CI "Minecraft matrix" job (`.github/workflows/ci.yml`, Linux + Windows),
+  which runs `samples/testmod/verity.json` (7 targets) through the repo's own `action.yml`, and nightly by
+  `full-matrix.yml`: `samples/testmod/verity-full.json`, the newest patch of every minor version per loader (~34
+  targets), one job per loader and OS. Locally, keep `-p` at about 3; each client plus Mesa takes several GB. Cloud sandboxes usually can't reach
+  Mojang/Fabric/Forge/NeoForge hosts, so check CI logs (GitHub MCP `get_job_logs`) to verify real launches.
+- Maven Central sometimes returns HTTP 429. Retry with `--max-workers=2` and a short backoff.
+
+## Layout
+
+| Module | Notes |
+|---|---|
+| `verity-api` | **Java 8 (`--release 8`), zero dependencies.** Mods shade and relocate it. Never add deps or newer APIs. |
+| `verity-core` | Engine. Packages: `meta` (Mojang/Fabric/Forge/NeoForge metadata), `install` (vanilla/Fabric/Forge processors, Java runtimes), `launch` (command builder, natives, instance layout, log parsing), `display` (window, Xvfb, Win32 hidden desktop + Mesa), `mods` (jar inspection, `ModPlanner`: per-target assignment of local + Modrinth mods), `modrinth` (API client, per-target file/dependency picking), `profile`, `hook` (socket server for verity-api), `run` (orchestrator, `ClientSession` state machine), `report` (JSON/JUnit/HTML), `auth`, `net`, `home`, `util` |
+| `verity-cli` | picocli. Exit codes: 0 pass, 1 test failures, 2 config error (`ProfileException`), 3 internal error |
+| `verity-ui` | JavaFX + AtlantaFX, code-only (no FXML). All work goes through `verity-core`; background work via `Fx.async`, run events batched through `RunTab`'s pump. |
+| `verity-app` | `Main`: no args → UI, else CLI. Shadow jar + `jpackageImage` |
+| `samples/testmod` | One Java 8 jar for Fabric, FML 1.7.10, Forge 1.8–1.12, Forge 1.13+, NeoForge, built against compile-only stubs in `src/stubs` |
+
+## Conventions and gotchas
+
+- **Never touch the user's `.minecraft`.** Everything lives under the Verity home (`VerityHome`). Each client gets
+  `instances/<profile>/<target>/{game,natives,home}`, and `run.isolateHome` sandboxes HOME/APPDATA/user.home.
+- Minecraft version ordering uses `McVersion` (numeric), never string compare. Version ranges go through
+  `VersionPredicate` (Fabric, Maven/mods.toml and selector syntaxes).
+- Downloads go through `Downloader` (sha1/size verify, mirrors, atomic moves). Small metadata goes through `MetaCache`,
+  which serves stale copies when offline. Installs are serialized with `PathLocks` (in-process + cross-process).
+- Forge/NeoForge: `ForgeInstaller` runs installer processors itself. `replaceTokens` mirrors Forge's installer
+  semantics exactly; keep it that way. NeoForge versions come from the Reposilite API first, then maven-metadata.xml.
+- Forge processors run on Java 17+ (Forge's expected output hashes come from a modern JVM; Mojang's 8u51 writes
+  different zip bytes), with `-Xmx2048M` and at most 2 at once. Installs aren't limited by `maxParallel`.
+- `VersionResolver.merge` dedupes libraries only across the inheritance chain. Within one JSON, keep duplicates:
+  1.14-1.18 list LWJGL twice (macOS 3.2.1, others 3.2.2), and rules pick one.
+- Mojang's Java 16.0.1/17.0.1 runtimes (`java-runtime-alpha`/`beta`, MC 1.17-1.18) crash in the JIT on AVX-512 CPUs,
+  so `LaunchCommandBuilder` adds `-XX:UseAVX=2` for them (x86 only).
+- Minecraft 26.3+ opens its window with SDL3 and asks for an sRGB-capable GL framebuffer, which Xvfb's GLX visuals
+  lack, so `XvfbDisplay` sets `SDL_VIDEO_FORCE_EGL=1`. Without a working OpenGL or Vulkan backend the game hangs on a
+  dialog (and a mod that connects early would still pass), so `ClientSession` reports CRASHED when the log shows both
+  failed.
+- Cached files can be torn by a crash or power loss: right size, garbage content. Installer jars have no checksum
+  (they're re-downloaded if they don't open as a zip), and child jars and installer-extracted libraries are compared
+  by content, not size.
+- Child version jars are copied to `versions/<id>/<id>.jar`, because Forge's `ignoreList` relies on `${version_name}.jar`.
+- Windows: Mesa (mesa-dist-win) is unpacked with 7-Zip (`7z.exe` or a downloaded `7zr.exe`), because the archives use
+  BCJ2, which commons-compress can't decode. Some releases ship builds without OpenGL (26.2.6 MSVC), so `MesaGl`
+  tries MSVC then MinGW across recent releases. With `softwareGl=auto`, a Mesa failure falls back to the GPU.
+- `Status.SKIPPED` (from `run.onlyTargetsWithAllMods`) is not a failure: use `Status.failure()`, not `!success()`,
+  when deciding pass/fail. Modrinth tests use `FakeModrinth` (local HttpServer); point clients at it with the
+  `verity.modrinth.api` system property.
+- Don't name boolean helpers on profile POJOs `isX()`/`getX()` for an existing field `x`: Jackson merges them and a
+  `@JsonIgnore` on the helper drops the field (see `ModEntry.fromModrinth()`).
+- Tests must be path-separator agnostic (Windows CI runs them): build expected paths with `Path.of(...).toString()`.
+  Never put glob characters through `Path.of` (Windows rejects `*`); see `ProfileStore.absolutize`.
+- Code style: match the surrounding code (Java 21 records/switch expressions in core, Java 8 in api/testmod),
+  sparse comments that explain why, no new dependencies without need (versions in `gradle/libs.versions.toml`).

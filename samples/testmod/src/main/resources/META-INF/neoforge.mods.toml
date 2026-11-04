@@ -1,0 +1,9 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "MIT"
+
+[[mods]]
+modId = "veritysample"
+version = "1"
+displayName = "Verity sample"
+description = "Reports to Verity that it was loaded."
