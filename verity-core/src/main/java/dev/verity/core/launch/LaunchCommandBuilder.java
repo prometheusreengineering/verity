@@ -21,6 +21,19 @@ public final class LaunchCommandBuilder {
     private LaunchCommandBuilder() {
     }
 
+    /** Mojang's Java 16.0.1 and 17.0.1 runtimes (Minecraft 1.17-1.18). */
+    static final java.util.Set<String> AVX512_CRASHING_RUNTIMES = java.util.Set.of("java-runtime-alpha", "java-runtime-beta");
+
+    /**
+     * These early JDK builds crash in JIT-compiled code (EXCEPTION_ACCESS_VIOLATION within seconds) on CPUs with
+     * AVX-512, e.g. Intel Rocket Lake or AMD Zen 4. Capping the JIT at AVX2 avoids it at no practical cost. The flag
+     * only exists on x86 JVMs; anywhere else it would stop the JVM from starting.
+     */
+    static boolean limitAvx(VersionJson v, Rule.Environment env) {
+        return v.javaVersion != null && AVX512_CRASHING_RUNTIMES.contains(v.javaVersion.component)
+                && ("x86_64".equals(env.arch()) || "x86".equals(env.arch()));
+    }
+
     public static List<String> build(LaunchRequest r, Rule.Environment baseEnv) {
         VersionJson v = r.version().version();
         Rule.Environment env = baseEnv.withFeatures(Map.of(
@@ -35,6 +48,7 @@ public final class LaunchCommandBuilder {
         cmd.add("-Xms" + Math.min(512, r.memoryMb()) + "M");
         // Mitigates Log4Shell on versions whose bundled log4j supports the flag.
         cmd.add("-Dlog4j2.formatMsgNoLookups=true");
+        if (limitAvx(v, baseEnv)) cmd.add("-XX:UseAVX=2");
         r.systemProperties().forEach((k, val) -> cmd.add("-D" + k + "=" + val));
 
         List<String> jvm = new ArrayList<>();

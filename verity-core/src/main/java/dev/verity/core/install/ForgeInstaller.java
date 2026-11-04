@@ -64,7 +64,14 @@ public final class ForgeInstaller {
             }
             game.ensureVanilla(mc, progress);
             progress.stage("Downloading " + type.displayName() + " " + loaderVersion + " installer");
-            ctx.downloader().download(new Downloader.Artifact(List.of(URI.create(url)), installer, null, -1, true));
+            Downloader.Artifact artifact = new Downloader.Artifact(List.of(URI.create(url)), installer, null, -1, true);
+            ctx.downloader().download(artifact);
+            if (!isZip(installer)) {
+                // No checksum is published with the installer, so a cached copy torn by a crash or power loss looks
+                // valid to the downloader; fetch it again.
+                Files.delete(installer);
+                ctx.downloader().download(artifact);
+            }
             String id;
             try (ZipFile zip = new ZipFile(installer.toFile())) {
                 JsonNode profile = readJson(zip, "install_profile.json");
@@ -130,6 +137,12 @@ public final class ForgeInstaller {
                 VersionJson base = ctx.meta().mojang().vanillaVersion(mc);
                 String component = base.javaVersion != null && base.javaVersion.component != null ? base.javaVersion.component : "jre-legacy";
                 int major = base.javaVersion != null && base.javaVersion.majorVersion > 0 ? base.javaVersion.majorVersion : 8;
+                if (major < PROCESSOR_MIN_JAVA) {
+                    // Forge's installer runs processors on the user's (modern) Java and its expected output hashes come
+                    // from that: on Mojang's Java 8u51 jarsplitter writes different zip bytes (1.13.2 slim jar mismatch).
+                    component = "java-runtime-gamma";
+                    major = PROCESSOR_MIN_JAVA;
+                }
                 Path java = ctx.java().javaFor(component, major, progress);
                 int i = 0;
                 int total = processors.size();
@@ -201,6 +214,8 @@ public final class ForgeInstaller {
             outputs.put(replaceTokens(e.getKey(), data), replaceTokens(e.getValue().asText(), data));
         }
         if (!outputs.isEmpty() && outputsValid(outputs)) return;
+        // Stale outputs must go: some processors (jarsplitter) skip work when their input-keyed cache file matches.
+        for (String out : outputs.keySet()) Files.deleteIfExists(Path.of(out));
 
         String mainClass;
         try (JarFile jf = new JarFile(jar.toFile())) {
@@ -210,6 +225,8 @@ public final class ForgeInstaller {
 
         List<String> cmd = new ArrayList<>();
         cmd.add(java.toString());
+        // Without a limit each processor JVM may reserve a quarter of RAM; several at once have run machines out of memory.
+        cmd.add("-Xmx" + PROCESSOR_HEAP_MB + "M");
         cmd.addAll(ProxyConfig.jvmArgs());
         cmd.add("-cp");
         cmd.add(String.join(Os.current().classpathSeparator(), cp.stream().map(Path::toString).toList()));
@@ -218,14 +235,44 @@ public final class ForgeInstaller {
 
         Files.writeString(log, "\n$ " + String.join(" ", cmd) + "\n", StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        Process proc = new ProcessBuilder(cmd).redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile())).start();
-        int exit = proc.waitFor();
+        int exit;
+        // Installs of different versions run concurrently (only launches are limited by maxParallel), so the
+        // memory- and CPU-heavy processors (patching, remapping) get their own global limit.
+        PROCESSOR_SLOTS.acquire();
+        try {
+            Process proc = new ProcessBuilder(cmd).redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile())).start();
+            exit = proc.waitFor();
+        } finally {
+            PROCESSOR_SLOTS.release();
+        }
         if (exit != 0) {
             throw new IOException("Installer processor " + mainClass + " failed with exit code " + exit + "; see " + log + "\n" + tail(log));
         }
         if (!outputs.isEmpty() && !outputsValid(outputs)) throw new IOException("Processor " + mainClass + " produced unexpected outputs");
     }
+
+    static long crc32(Path file) throws IOException {
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        try (InputStream in = Files.newInputStream(file)) {
+            byte[] buf = new byte[1 << 16];
+            for (int n; (n = in.read(buf)) > 0; ) crc.update(buf, 0, n);
+        }
+        return crc.getValue();
+    }
+
+    @SuppressWarnings("try")
+    static boolean isZip(Path file) {
+        try (ZipFile ignored = new ZipFile(file.toFile())) {
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    static final int PROCESSOR_HEAP_MB = 2048;
+    static final int PROCESSOR_MIN_JAVA = 17;
+    private static final java.util.concurrent.Semaphore PROCESSOR_SLOTS = new java.util.concurrent.Semaphore(2);
 
     String processArg(String arg, Map<String, String> data) throws IOException {
         if (arg.startsWith("[") && arg.endsWith("]")) return artifactPath(arg).toString();
@@ -286,7 +333,7 @@ public final class ForgeInstaller {
             if (e.isDirectory() || !e.getName().startsWith("maven/")) continue;
             Path target = libs.resolve(e.getName().substring("maven/".length())).normalize();
             if (!target.startsWith(libs)) continue;
-            if (Files.isRegularFile(target) && Files.size(target) == e.getSize()) continue;
+            if (Files.isRegularFile(target) && Files.size(target) == e.getSize() && crc32(target) == e.getCrc()) continue;
             extractEntry(zip, e.getName(), target);
         }
     }

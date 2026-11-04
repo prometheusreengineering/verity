@@ -19,7 +19,9 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 - `RunOrchestratorTest` runs the whole pipeline against fake game JVMs (`FakeGame`) from a pre-seeded home, so it
   needs no network. Use that pattern for anything touching install/launch/session logic.
 - Real Minecraft is only exercised by the CI "Minecraft matrix" job (`.github/workflows/ci.yml`, Linux + Windows),
-  which runs `samples/testmod/verity.json` through the repo's own `action.yml`. Cloud sandboxes usually can't reach
+  which runs `samples/testmod/verity.json` (7 targets) through the repo's own `action.yml`, and nightly by
+  `full-matrix.yml`: `samples/testmod/verity-full.json`, the newest patch of every minor version per loader (~34
+  targets), one job per loader and OS. Locally, keep `-p` at about 3; each client plus Mesa takes several GB. Cloud sandboxes usually can't reach
   Mojang/Fabric/Forge/NeoForge hosts, so check CI logs (GitHub MCP `get_job_logs`) to verify real launches.
 - Maven Central sometimes returns HTTP 429. Retry with `--max-workers=2` and a short backoff.
 
@@ -44,6 +46,15 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
   which serves stale copies when offline. Installs are serialized with `PathLocks` (in-process + cross-process).
 - Forge/NeoForge: `ForgeInstaller` runs installer processors itself. `replaceTokens` mirrors Forge's installer
   semantics exactly; keep it that way. NeoForge versions come from the Reposilite API first, then maven-metadata.xml.
+- Forge processors run on Java 17+ (Forge's expected output hashes come from a modern JVM; Mojang's 8u51 writes
+  different zip bytes), with `-Xmx2048M` and at most 2 at once. Installs aren't limited by `maxParallel`.
+- `VersionResolver.merge` dedupes libraries only across the inheritance chain. Within one JSON, keep duplicates:
+  1.14-1.18 list LWJGL twice (macOS 3.2.1, others 3.2.2), and rules pick one.
+- Mojang's Java 16.0.1/17.0.1 runtimes (`java-runtime-alpha`/`beta`, MC 1.17-1.18) crash in the JIT on AVX-512 CPUs,
+  so `LaunchCommandBuilder` adds `-XX:UseAVX=2` for them (x86 only).
+- Cached files can be torn by a crash or power loss: right size, garbage content. Installer jars have no checksum
+  (they're re-downloaded if they don't open as a zip), and child jars and installer-extracted libraries are compared
+  by content, not size.
 - Child version jars are copied to `versions/<id>/<id>.jar`, because Forge's `ignoreList` relies on `${version_name}.jar`.
 - Windows: Mesa (mesa-dist-win) is unpacked with 7-Zip (`7z.exe` or a downloaded `7zr.exe`), because the archives use
   BCJ2, which commons-compress can't decode. Some releases ship builds without OpenGL (26.2.6 MSVC), so `MesaGl`

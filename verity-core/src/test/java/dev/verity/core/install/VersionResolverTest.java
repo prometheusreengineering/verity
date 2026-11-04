@@ -55,6 +55,25 @@ class VersionResolverTest {
     }
 
     @Test
+    void keepsPerOsDuplicatesWithinOneVersionButLetsChildrenOverride() throws Exception {
+        // 1.14-1.18 shape: the same library twice in one JSON, picked by rules (macOS 3.2.1, everything else 3.2.2).
+        VersionJson vanilla = dev.verity.core.util.Json.MAPPER.readValue("""
+                {"id":"1.16.5","libraries":[
+                  {"name":"org.lwjgl:lwjgl-glfw:3.2.1","rules":[{"action":"allow","os":{"name":"osx"}}]},
+                  {"name":"org.lwjgl:lwjgl-glfw:3.2.2","rules":[{"action":"allow"},{"action":"disallow","os":{"name":"osx"}}]},
+                  {"name":"org.ow2.asm:asm:9.0"}]}
+                """, VersionJson.class);
+        VersionJson loader = dev.verity.core.util.Json.MAPPER.readValue("""
+                {"id":"loader","inheritsFrom":"1.16.5","libraries":[{"name":"org.ow2.asm:asm:9.8"}]}
+                """, VersionJson.class);
+        VersionJson m = VersionResolver.merge(List.of(loader, vanilla));
+        assertThat(m.libraries).extracting(l -> l.name)
+                .containsExactly("org.ow2.asm:asm:9.8", "org.lwjgl:lwjgl-glfw:3.2.1", "org.lwjgl:lwjgl-glfw:3.2.2");
+        assertThat(Libraries.resolve(m, WINDOWS, tmp)).extracting(x -> x.coordinate().toString())
+                .contains("org.lwjgl:lwjgl-glfw:3.2.2").doesNotContain("org.lwjgl:lwjgl-glfw:3.2.1");
+    }
+
+    @Test
     void legacyForgeAndNatives() throws Exception {
         VersionResolver r = new VersionResolver(TestVersions.install(tmp, "1.8.9", "1.8.9-forge1.8.9-11.15.1.2318-1.8.9"));
         VersionJson m = r.resolve("1.8.9-forge1.8.9-11.15.1.2318-1.8.9");

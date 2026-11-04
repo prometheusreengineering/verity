@@ -7,6 +7,7 @@ import dev.verity.core.auth.LaunchAccount;
 import dev.verity.core.install.InstalledVersion;
 import dev.verity.core.install.VersionResolver;
 import dev.verity.core.meta.Rule;
+import dev.verity.core.meta.VersionJson;
 import dev.verity.core.util.Os;
 import java.nio.file.Path;
 import java.util.List;
@@ -45,6 +46,18 @@ class LaunchCommandBuilderTest {
         assertThat(cmd.get(cmd.indexOf("--userType") + 1)).isEqualTo("legacy");
         assertThat(cmd.get(cmd.indexOf("--uuid") + 1)).doesNotContain("-").hasSize(32);
         assertThat(String.join(" ", cmd)).doesNotContain("${");
+    }
+
+    @Test
+    void capsAvxOnlyForMojangsEarlyJava16And17OnX86() throws Exception {
+        VersionJson v = new VersionJson();
+        v.javaVersion = new VersionJson.JavaVersion();
+        v.javaVersion.component = "java-runtime-beta";
+        assertThat(LaunchCommandBuilder.limitAvx(v, LINUX)).isTrue();
+        assertThat(LaunchCommandBuilder.limitAvx(v, new Rule.Environment(Os.OSX, "arm64", "14", Map.of()))).isFalse();
+        v.javaVersion.component = "java-runtime-gamma";
+        assertThat(LaunchCommandBuilder.limitAvx(v, LINUX)).isFalse();
+        assertThat(LaunchCommandBuilder.build(request("fabric-loader-0.16.14-1.20.1"), LINUX)).doesNotContain("-XX:UseAVX=2");
     }
 
     @Test

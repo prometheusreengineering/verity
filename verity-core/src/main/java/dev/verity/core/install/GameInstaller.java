@@ -69,7 +69,8 @@ public final class GameInstaller {
         if (!versionId.equals(baseJar)) {
             Path base = clientJar(baseJar);
             if (!Files.isRegularFile(base)) throw new IOException("Base client jar " + base + " missing");
-            if (!Files.isRegularFile(jar) || Files.size(jar) != Files.size(base)) {
+            // Compare bytes, not sizes: a copy torn by a crash or power loss keeps its size but not its content.
+            if (!Files.isRegularFile(jar) || Files.mismatch(jar, base) != -1) {
                 Files.createDirectories(jar.getParent());
                 Path tmp = jar.resolveSibling(jar.getFileName() + ".tmp");
                 Files.copy(base, tmp, StandardCopyOption.REPLACE_EXISTING);

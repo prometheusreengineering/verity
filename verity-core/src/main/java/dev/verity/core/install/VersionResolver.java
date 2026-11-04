@@ -53,7 +53,9 @@ public final class VersionResolver {
         VersionJson child = chain.get(0);
         out.id = child.id;
         out.inheritsFrom = null;
-        Map<String, Library> libs = new LinkedHashMap<>();
+        // Child versions override parent libraries with the same versionless key. Entries within one JSON are all
+        // kept: 1.14-1.18 list e.g. lwjgl-glfw 3.2.1 (macOS only) and 3.2.2 (everything else), and rules pick one.
+        Map<String, List<Library>> libs = new LinkedHashMap<>();
         List<Argument> game = new ArrayList<>();
         List<Argument> jvm = new ArrayList<>();
         boolean anyModernArgs = false;
@@ -69,7 +71,11 @@ public final class VersionResolver {
             if (out.releaseTime == null) out.releaseTime = v.releaseTime;
             if (out.jar == null) out.jar = v.jar;
             if (v.libraries != null) {
-                for (Library l : v.libraries) libs.putIfAbsent(libraryKey(l), l);
+                java.util.Set<String> fromChildren = new java.util.HashSet<>(libs.keySet());
+                for (Library l : v.libraries) {
+                    String key = libraryKey(l);
+                    if (!fromChildren.contains(key)) libs.computeIfAbsent(key, k -> new ArrayList<>()).add(l);
+                }
             }
             if (v.arguments != null) anyModernArgs = true;
         }
@@ -87,7 +93,8 @@ public final class VersionResolver {
             out.arguments.jvm = jvm;
             // A loader that still uses minecraftArguments on a modern base would be odd; modern wins.
         }
-        out.libraries = new ArrayList<>(libs.values());
+        out.libraries = new ArrayList<>();
+        for (List<Library> sameKey : libs.values()) out.libraries.addAll(sameKey);
         return out;
     }
 
