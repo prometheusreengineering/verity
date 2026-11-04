@@ -8,6 +8,11 @@ name: Full matrix
 on:
   schedule:
     - cron: "17 3 * * *"
+  # PRs that change the matrix itself (manual dispatch only works once a workflow is on the default branch).
+  pull_request:
+    paths:
+      - .github/workflows/full-matrix.yml
+      - samples/testmod/verity-full.json
   workflow_dispatch:
     inputs:
       loader:
@@ -55,7 +60,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        # Scheduled runs have no inputs: every loader.
+        # Scheduled and PR runs have no inputs: every loader.
         loader: ${{ fromJSON((inputs.loader == '' || inputs.loader == 'all') && '["forge","fabric","neoforge"]' || format('["{0}"]', inputs.loader)) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
