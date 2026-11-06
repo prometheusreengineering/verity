@@ -28,4 +28,22 @@ publishing {
             from(components["java"])
         }
     }
+    // Only release.yml deploys, and it picks a repository per task (see the ordering note there).
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/prometheusreengineering/verity")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR")
+                password = System.getenv("GITHUB_TOKEN")
+            }
+        }
+        // A checkout of prometheusreengineering/maven, served at maven.prometheusreengineer.ing.
+        providers.gradleProperty("prometheusMavenDir").orNull?.let { dir ->
+            maven {
+                name = "Prometheus"
+                url = file(dir).toURI()
+            }
+        }
+    }
 }

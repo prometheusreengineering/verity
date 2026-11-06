@@ -13,10 +13,15 @@ change is tested on all of them at once.
 [`Verity.java`](../verity-api/src/main/java/dev/verity/api/Verity.java) into your sources under your own package
 (for example `studio.dreamys.prometheus.verity.Verity`). Nothing else changes.
 
-**B. Shade it.** Install the jar (`./gradlew :verity-api:publishToMavenLocal` in this repository, or download
-`verity-api-<v>.jar` from a release and `mvn install:install-file` it), then shade it *with relocation*:
+**B. Shade it.** Each release deploys `verity-api` to `https://maven.prometheusreengineer.ing/`, which needs no token
+(GitHub Packages has it too, but requires one even to read). Add the repository, then shade it *with relocation*:
 
 ```xml
+<repository>
+  <id>prometheus</id>
+  <url>https://maven.prometheusreengineer.ing/</url>
+</repository>
+...
 <dependency>
   <groupId>dev.verity</groupId>
   <artifactId>verity-api</artifactId>

@@ -24,6 +24,9 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
   targets), one job per loader and OS. Locally, keep `-p` at about 3; each client plus Mesa takes several GB. Cloud sandboxes usually can't reach
   Mojang/Fabric/Forge/NeoForge hosts, so check CI logs (GitHub MCP `get_job_logs`) to verify real launches.
 - Maven Central sometimes returns HTTP 429. Retry with `--max-workers=2` and a short backoff.
+- Pushing a `v*` tag releases: `release.yml` takes the version from the tag, deploys `verity-api` to
+  `prometheusreengineering/maven` (needs the `MAVEN_REPO_DEPLOY_KEY` secret) and GitHub Packages, then creates the
+  GitHub release that `action.yml` downloads from.
 
 ## Layout
 
