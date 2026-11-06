@@ -4,7 +4,6 @@ plugins {
 
 allprojects {
     group = "dev.verity"
-    version = "0.1.0-SNAPSHOT"
     repositories { mavenCentral() }
 }
 
