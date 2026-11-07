@@ -121,7 +121,7 @@ class CiPlannerTest {
             TargetResult r = new TargetResult();
             r.id = t.id();
             r.status = Status.PASSED;
-            r.durationMs = t.minecraft().startsWith("26") ? 900_000 : 30_000;
+            r.runMs = t.minecraft().startsWith("26") ? 900_000L : 30_000L;
             slow.results.add(r);
         }
         CiPlan built = CiPlanner.plan(many(), List.of(), new CostModel(), o);
@@ -141,7 +141,8 @@ class CiPlannerTest {
         TargetResult r = new TargetResult();
         r.id = t.id();
         r.status = Status.PASSED;
-        r.durationMs = 300_000;
+        r.durationMs = 900_000; // mostly waiting for a slot
+        r.runMs = 300_000L;
         run.results.add(r);
         RunReport prepare = new RunReport();
         prepare.host = "runner (Linux amd64)";

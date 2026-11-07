@@ -45,15 +45,18 @@ public final class CostModel {
     private final Set<CiOs> learnedOses = new HashSet<>();
     private double sizeScale = 1;
 
-    /** Uses run times from earlier reports (prepare-only reports are ignored, their times are install times). */
+    /**
+     * Uses run times from earlier reports: from launch to the end ({@code runMs}), because the whole duration includes
+     * installing and waiting for a free slot, which depend on the split, not the target.
+     */
     public CostModel learn(Collection<RunReport> reports) {
         for (RunReport r : reports) {
             CiOs os = CiOs.fromHost(r.host);
             if (os == null || r.prepareOnly) continue;
             for (TargetResult t : r.results) {
                 if (t.status == null || !t.status.terminal() || t.status == Status.SKIPPED || t.status == Status.CANCELLED
-                        || t.durationMs <= 0) continue;
-                learned.computeIfAbsent(os.runnerOs + "|" + t.id, k -> new ArrayList<>()).add(t.durationMs / 1000.0);
+                        || t.runMs == null || t.runMs <= 0) continue;
+                learned.computeIfAbsent(os.runnerOs + "|" + t.id, k -> new ArrayList<>()).add(t.runMs / 1000.0);
                 learnedOses.add(os);
             }
         }
