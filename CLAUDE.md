@@ -32,13 +32,17 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
   matched directory goes to tar whole, ignoring exclusions in it, so libraries are matched by file type. The installer
   marker means a missing generated library is never rebuilt, so add new library file types to the lists and the check.
   A skipped step's output is null, and `null == '0'` is true in an expression, so check `outcome` too.
+- Plan mode (`verity matrix`) gives each job a matrix entry that the action takes whole as `job`. Planned jobs key their
+  caches by their cache group (`CiPlanner.key`: profile hash plus the group's target ids), not the profile. Groups are
+  split by built-in costs only, so learned timings (from `verity-timing-*` artifacts of the workflow's last run) never move
+  them and invalidate caches. `CostModel`'s numbers come from docs/performance.md; update both together.
 
 ## Layout
 
 | Module | Notes |
 |---|---|
 | `verity-api` | **Java 8 (`--release 8`), zero dependencies.** Mods shade and relocate it. Never add deps or newer APIs. |
-| `verity-core` | Engine. Packages: `meta` (Mojang/Fabric/Forge/NeoForge metadata), `install` (vanilla/Fabric/Forge processors, Java runtimes), `launch` (command builder, natives, instance layout, log parsing), `display` (window, Xvfb, Win32 hidden desktop + Mesa), `mods` (jar inspection, `ModPlanner`: per-target assignment of local + Modrinth mods), `modrinth` (API client, per-target file/dependency picking), `profile`, `hook` (socket server for verity-api), `run` (orchestrator, `ClientSession` state machine), `report` (JSON/JUnit/HTML), `auth`, `net`, `home`, `util` |
+| `verity-core` | Engine. Packages: `meta` (Mojang/Fabric/Forge/NeoForge metadata), `install` (vanilla/Fabric/Forge processors, Java runtimes), `launch` (command builder, natives, instance layout, log parsing), `display` (window, Xvfb, Win32 hidden desktop + Mesa), `mods` (jar inspection, `ModPlanner`: per-target assignment of local + Modrinth mods), `modrinth` (API client, per-target file/dependency picking), `profile`, `hook` (socket server for verity-api), `run` (orchestrator, `ClientSession` state machine, `Shard`), `ci` (`CiPlanner`/`CostModel`: runner count, OS split, shards and cache groups for `verity matrix` and the action's plan mode), `report` (JSON/JUnit/HTML), `auth`, `net`, `home`, `util` |
 | `verity-cli` | picocli. Exit codes: 0 pass, 1 test failures, 2 config error (`ProfileException`), 3 internal error |
 | `verity-ui` | JavaFX + AtlantaFX, code-only (no FXML). All work goes through `verity-core`; background work via `Fx.async`, run events batched through `RunTab`'s pump. |
 | `verity-app` | `Main`: no args → UI, else CLI. Shadow jar + `jpackageImage` |
