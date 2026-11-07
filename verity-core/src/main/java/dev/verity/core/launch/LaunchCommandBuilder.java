@@ -66,6 +66,7 @@ public final class LaunchCommandBuilder {
             legacy.add(vars.get("classpath"));
             jvm.addAll(0, legacy);
         }
+        if (needsLibraryDirectory(v, jvm, r.extraJvmArgs())) jvm.add("-DlibraryDirectory=" + vars.get("library_directory"));
         cmd.addAll(jvm);
 
         if (r.loggingConfig() != null && v.logging != null && v.logging.client != null && v.logging.client.argument != null) {
@@ -89,6 +90,19 @@ public final class LaunchCommandBuilder {
         cmd.addAll(game);
         cmd.addAll(r.extraGameArgs());
         return cmd;
+    }
+
+    /**
+     * Modern Forge and NeoForge bootstraps look for their libraries in {@code libraryDirectory}, defaulting to
+     * {@code libraries} under the working directory (the launcher's .minecraft, but Verity's per-instance game dir).
+     * Most version JSONs pass it; some early builds (Forge 49.0.2 for 1.20.3) don't.
+     */
+    static boolean needsLibraryDirectory(VersionJson v, List<String> jvm, List<String> extra) {
+        String main = v.mainClass == null ? "" : v.mainClass;
+        boolean forgeBootstrap = main.startsWith("cpw.mods.") || main.startsWith("net.minecraftforge.")
+                || main.startsWith("net.neoforged.");
+        return forgeBootstrap && v.arguments != null && v.arguments.jvm != null
+                && java.util.stream.Stream.concat(jvm.stream(), extra.stream()).noneMatch(a -> a.startsWith("-DlibraryDirectory="));
     }
 
     private static boolean onlyFeatureGated(List<Argument> args) {
