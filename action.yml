@@ -48,6 +48,13 @@ inputs:
     description: Extra arguments for "verity run".
     required: false
     default: ""
+  defender:
+    description: >-
+      Windows only. "off" turns off Defender's real-time scanning for the rest of the job, which makes restoring the
+      cache and starting clients much faster on hosted runners (throwaway VMs). "keep" leaves it alone; use that on
+      self-hosted runners.
+    required: false
+    default: "off"
 
 outputs:
   passed:
@@ -141,6 +148,18 @@ runs:
           echo "The caches for this profile are already complete."
           echo "skip=true" >> "$GITHUB_OUTPUT"
         fi
+
+    # Scanning every file the cache restore writes (tens of thousands of assets) is most of a Windows restore.
+    - name: Turn off Defender's real-time scanning
+      if: runner.os == 'Windows' && inputs.defender == 'off' && steps.state.outputs.skip != 'true'
+      shell: pwsh
+      run: |
+        try {
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Stop
+          Write-Host "Defender real-time scanning is off for this job."
+        } catch {
+          Write-Host "::warning::Couldn't turn off Defender's real-time scanning ($($_.Exception.Message)); set defender: keep to skip this."
+        }
 
     - name: Restore the shared cache
       id: restore-shared
