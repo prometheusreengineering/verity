@@ -248,7 +248,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mvn -B package            # build your mod
-      - uses: prometheusreengineering/verity@v0.1.0
+      - uses: prometheusreengineering/verity@v0.1.1
         with:
           profile: verity.json
           # only: "1.8.9,1.20.1-fabric"
@@ -258,6 +258,44 @@ jobs:
 The action installs Xvfb/Mesa on Linux, caches the Minecraft/loader/Java downloads between workflow runs, writes a
 results table to the job summary, uploads the reports as an artifact, and fails the job if any target fails.
 `.github/workflows/ci.yml` runs Verity's own end-to-end matrix with `samples/testmod`.
+
+Each profile gets two caches per job, renewed weekly: one shared by every OS (assets, versions, installers, mods,
+metadata, libraries) and one for the OS (Java runtimes, native libraries, Mesa and 7-Zip on Windows, Xvfb packages on
+Linux). Verity's home lives in `.verity-home` in the workspace, because a cache only restores across OSes from a
+relative path. To split a profile across jobs with `only`, add a prepare job per OS first, because jobs that use `only`
+restore the caches but don't save them. A prepare job does nothing when the caches are already complete, and
+`continue-on-error` lets the tests run (and download what they need) if it fails:
+
+```yaml
+jobs:
+  prepare:
+    continue-on-error: true
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: mvn -B package            # the profile's mods must exist
+      - uses: prometheusreengineering/verity@v0.1.1
+        with:
+          mode: prepare
+          profile: verity.json
+  verity:
+    needs: prepare
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        loader: [fabric, forge, neoforge]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: mvn -B package
+      - uses: prometheusreengineering/verity@v0.1.1
+        with:
+          profile: verity.json
+          only: ${{ matrix.loader }}
+```
 
 ## Where things are stored
 

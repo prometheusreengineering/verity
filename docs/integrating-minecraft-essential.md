@@ -133,7 +133,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "8" }
       - run: mvn -B -q package
-      - uses: prometheusreengineering/verity@v0.1.0
+      - uses: prometheusreengineering/verity@v0.1.1
         env:
           VERITY_MSA_REFRESH_TOKEN: ${{ secrets.VERITY_MSA_REFRESH_TOKEN }}
         with:

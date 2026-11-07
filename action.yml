@@ -9,8 +9,14 @@ inputs:
   profile:
     description: Path to a Verity profile JSON (e.g. verity.json in your mod repository).
     required: true
+  mode:
+    description: >-
+      "run" tests the targets. "prepare" installs everything the whole profile needs without launching and saves it
+      as the cache; run it in one job per OS before a matrix that uses "only", because those jobs don't save a cache.
+    required: false
+    default: run
   only:
-    description: Comma separated target filters (e.g. "1.20.1-fabric,1.8.9").
+    description: Comma separated target filters (e.g. "1.20.1-fabric,1.8.9"). Ignored when mode is "prepare".
     required: false
     default: ""
   parallel:
@@ -30,7 +36,7 @@ inputs:
     required: false
     default: ""
   cache:
-    description: Cache Minecraft, loaders, libraries and Java runtimes between workflow runs.
+    description: Cache Minecraft, loaders, libraries, mods and Java runtimes between workflow runs.
     required: false
     default: "true"
   args:
@@ -49,42 +55,170 @@ outputs:
     description: Absolute path of the report directory.
     value: ${{ steps.run.outputs.report-dir }}
 
+# Two caches per job: one shared by every OS and one for this OS, which together hold the whole Verity home except what
+# each run creates. They stay unchanged until the key rolls over, and the restore keys let a new one start from last
+# week's. They stop at the profile, because a cache started from another profile would keep its files forever. Paths are
+# relative because an absolute path doesn't match across OSes, which is why the home is in the
+# workspace. The libraries are matched by file type: the cache action passes a matched directory to tar whole, ignoring
+# exclusions in it, and the natives must stay out of the shared cache.
 runs:
   using: composite
   steps:
+    - name: Check inputs and pick the cache keys
+      id: key
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        PROFILE: ${{ inputs.profile }}
+      run: |
+        if [ "$MODE" != run ] && [ "$MODE" != prepare ]; then
+          echo "::error::Unknown mode '$MODE' (expected run or prepare)."
+          exit 1
+        fi
+        # Not hashFiles: Windows checks files out with CRLF, which would give each OS its own shared cache. A missing
+        # profile is left for Verity to report.
+        HASH=none
+        if [ -f "$PROFILE" ]; then HASH="$(tr -d '\r' < "$PROFILE" | sha256sum | cut -d' ' -f1)"; fi
+        # Selectors pick up new Minecraft releases without the profile changing, so the caches also roll over weekly.
+        week="$(date -u +%G-W%V)"
+        {
+          echo "shared=verity-shared-$HASH-$week"
+          echo "os=verity-$RUNNER_OS-$HASH-$week"
+          echo "hash=$HASH"
+        } >> "$GITHUB_OUTPUT"
+
+    # A prepare job with nothing to do shouldn't download gigabytes to find that out.
+    - name: Look for the shared cache
+      id: lookup-shared
+      if: inputs.cache == 'true' && inputs.mode == 'prepare'
+      uses: actions/cache/restore@v4
+      with:
+        lookup-only: true
+        enableCrossOsArchive: true
+        key: ${{ steps.key.outputs.shared }}
+        path: |
+          .verity-home/assets
+          .verity-home/versions
+          .verity-home/installers
+          .verity-home/mods-cache
+          .verity-home/meta-cache
+          .verity-home/libraries/**/*.jar
+          .verity-home/libraries/**/*.zip
+          .verity-home/libraries/**/*.txt
+          .verity-home/libraries/**/*.cache
+          .verity-home/libraries/**/*.json
+          .verity-home/libraries/**/*.lzma
+          .verity-home/libraries/**/*.srg
+          .verity-home/libraries/**/*.tsrg
+          !.verity-home/libraries/**/*natives-*
+
+    - name: Look for the OS cache
+      id: lookup-os
+      if: inputs.cache == 'true' && inputs.mode == 'prepare'
+      uses: actions/cache/restore@v4
+      with:
+        lookup-only: true
+        key: ${{ steps.key.outputs.os }}
+        path: |
+          .verity-home/runtimes
+          .verity-home/tools
+          .verity-home/apt
+          .verity-home/libraries/**/*natives-*
+
+    - name: Decide what to do
+      id: state
+      shell: bash
+      env:
+        SHARED: ${{ steps.lookup-shared.outputs.cache-hit }}
+        OS: ${{ steps.lookup-os.outputs.cache-hit }}
+      run: |
+        if [ "$SHARED" = true ] && [ "$OS" = true ]; then
+          echo "The caches for this profile are already complete."
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Restore the shared cache
+      id: restore-shared
+      if: inputs.cache == 'true' && steps.state.outputs.skip != 'true'
+      uses: actions/cache/restore@v4
+      with:
+        enableCrossOsArchive: true
+        key: ${{ steps.key.outputs.shared }}
+        restore-keys: |
+          verity-shared-${{ steps.key.outputs.hash }}-
+        path: |
+          .verity-home/assets
+          .verity-home/versions
+          .verity-home/installers
+          .verity-home/mods-cache
+          .verity-home/meta-cache
+          .verity-home/libraries/**/*.jar
+          .verity-home/libraries/**/*.zip
+          .verity-home/libraries/**/*.txt
+          .verity-home/libraries/**/*.cache
+          .verity-home/libraries/**/*.json
+          .verity-home/libraries/**/*.lzma
+          .verity-home/libraries/**/*.srg
+          .verity-home/libraries/**/*.tsrg
+          !.verity-home/libraries/**/*natives-*
+
+    - name: Restore the OS cache
+      id: restore-os
+      if: inputs.cache == 'true' && steps.state.outputs.skip != 'true'
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ steps.key.outputs.os }}
+        restore-keys: |
+          verity-${{ runner.os }}-${{ steps.key.outputs.hash }}-
+        path: |
+          .verity-home/runtimes
+          .verity-home/tools
+          .verity-home/apt
+          .verity-home/libraries/**/*natives-*
+
     - name: Set up Java for Verity
+      if: steps.state.outputs.skip != 'true'
       uses: actions/setup-java@v4
       with:
         distribution: temurin
         java-version: "21"
 
+    # Prepare only collects the packages, for the test jobs to install. The cached packages are for this runner image,
+    # which changes over time, so anything they can't install falls back to apt.
     - name: Install virtual display and software OpenGL (Linux)
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && steps.state.outputs.skip != 'true'
       shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
       run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq xvfb x11-xserver-utils libgl1-mesa-dri libglx-mesa0 mesa-utils > /dev/null
-
-    - name: Restore Verity cache
-      if: inputs.cache == 'true'
-      uses: actions/cache@v4
-      with:
-        path: |
-          ${{ runner.temp }}/verity-home/libraries
-          ${{ runner.temp }}/verity-home/assets
-          ${{ runner.temp }}/verity-home/versions
-          ${{ runner.temp }}/verity-home/runtimes
-          ${{ runner.temp }}/verity-home/installers
-          ${{ runner.temp }}/verity-home/tools
-        # "only" is part of the key so parallel jobs that shard one profile keep separate caches.
-        key: verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-${{ inputs.only }}-${{ github.run_id }}
-        restore-keys: |
-          verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-${{ inputs.only }}-
-          verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-
-          verity-${{ runner.os }}-
+        pkgs="xvfb x11-xserver-utils libgl1-mesa-dri libglx-mesa0 mesa-utils"
+        dir="$PWD/.verity-home/apt"
+        updated=
+        if ! ls "$dir"/*.deb > /dev/null 2>&1; then
+          sudo apt-get update -qq
+          updated=1
+          # Created without sudo so that the Verity home stays writable.
+          mkdir -p "$dir/partial"
+          # shellcheck disable=SC2086
+          sudo apt-get install -y -qq --download-only -o Dir::Cache::archives="$dir" $pkgs > /dev/null
+          sudo rm -rf "$dir/partial" "$dir/lock"
+          sudo chown -R "$(id -u):$(id -g)" "$dir"
+        fi
+        [ "$MODE" = prepare ] && exit 0
+        if ls "$dir"/*.deb > /dev/null 2>&1; then
+          sudo dpkg -i --skip-same-version --refuse-downgrade "$dir"/*.deb > /dev/null 2>&1 || true
+        fi
+        # shellcheck disable=SC2086
+        if ! dpkg -s $pkgs > /dev/null 2>&1 || ! command -v Xvfb > /dev/null; then
+          echo "The cached packages didn't install; using apt."
+          [ -n "$updated" ] || sudo apt-get update -qq
+          # shellcheck disable=SC2086
+          sudo apt-get install -y -qq $pkgs > /dev/null
+        fi
 
     - name: Get Verity
       id: jar
+      if: steps.state.outputs.skip != 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
@@ -105,10 +239,12 @@ runs:
 
     - name: Run Verity
       id: run
+      if: steps.state.outputs.skip != 'true'
       shell: bash
       env:
-        VERITY_HOME: ${{ runner.temp }}/verity-home
+        VERITY_HOME: ${{ github.workspace }}/.verity-home
         GITHUB_TOKEN: ${{ github.token }}
+        MODE: ${{ inputs.mode }}
         PROFILE: ${{ inputs.profile }}
         ONLY: ${{ inputs.only }}
         PARALLEL: ${{ inputs.parallel }}
@@ -120,8 +256,8 @@ runs:
         # Git Bash on Windows prints /d/a/...; actions and Java need D:\a\...
         if [ "$RUNNER_OS" = "Windows" ]; then report="$(cygpath -w "$report")"; fi
         echo "report-dir=$report" >> "$GITHUB_OUTPUT"
-        args=(run "$PROFILE" --report-dir "$report")
-        [ -n "$ONLY" ] && args+=(--only "$ONLY")
+        args=("$MODE" "$PROFILE" --report-dir "$report")
+        [ -n "$ONLY" ] && [ "$MODE" = run ] && args+=(--only "$ONLY")
         [ -n "$PARALLEL" ] && args+=(--parallel "$PARALLEL")
         set +e
         # shellcheck disable=SC2086
@@ -132,23 +268,79 @@ runs:
 
     - name: Summarize
       id: summary
-      if: always()
+      if: always() && steps.run.outcome != 'skipped'
       shell: bash
       env:
         REPORT: ${{ steps.run.outputs.report-dir }}
         PYTHONIOENCODING: utf-8
       run: python3 "${{ github.action_path }}/.github/scripts/summary.py" "$REPORT/report.json"
 
+    # A failed prepare saves nothing: an incomplete cache under this key would stay until the key rolls over. A plain
+    # run saves too, for workflows with no prepare job, unless "only" means it installed just part of the profile.
+    # Exit code 1 is a failing test, which still installed everything.
+    #
+    # Nothing regenerates a library missing from the cache, because the installer's marker says it's already installed.
+    # The outcome check matters: a skipped step's exit code is null, and null == '0' is true in an expression.
+    - name: Check the caches can hold every library
+      id: save
+      if: >-
+        inputs.cache == 'true' && steps.run.outcome == 'success'
+        && (steps.run.outputs.exit-code == '0' || (inputs.mode == 'run' && steps.run.outputs.exit-code == '1'))
+        && (inputs.mode == 'prepare' || inputs.only == '')
+      shell: bash
+      run: |
+        missed="$(find .verity-home/libraries -type f ! -name '*natives-*' ! -name '*.jar' ! -name '*.zip' ! -name '*.txt' \
+          ! -name '*.cache' ! -name '*.json' ! -name '*.lzma' ! -name '*.srg' ! -name '*.tsrg')"
+        if [ -n "$missed" ]; then
+          echo "::warning::These libraries won't be cached, so clients that need them will fail: $missed"
+          exit 0
+        fi
+        echo "ok=true" >> "$GITHUB_OUTPUT"
+
+    # If two OSes build the shared cache at once, the second save fails harmlessly: they hold the same files.
+    - name: Save the shared cache
+      if: steps.save.outputs.ok == 'true' && steps.restore-shared.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        enableCrossOsArchive: true
+        key: ${{ steps.key.outputs.shared }}
+        path: |
+          .verity-home/assets
+          .verity-home/versions
+          .verity-home/installers
+          .verity-home/mods-cache
+          .verity-home/meta-cache
+          .verity-home/libraries/**/*.jar
+          .verity-home/libraries/**/*.zip
+          .verity-home/libraries/**/*.txt
+          .verity-home/libraries/**/*.cache
+          .verity-home/libraries/**/*.json
+          .verity-home/libraries/**/*.lzma
+          .verity-home/libraries/**/*.srg
+          .verity-home/libraries/**/*.tsrg
+          !.verity-home/libraries/**/*natives-*
+
+    - name: Save the OS cache
+      if: steps.save.outputs.ok == 'true' && steps.restore-os.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ steps.key.outputs.os }}
+        path: |
+          .verity-home/runtimes
+          .verity-home/tools
+          .verity-home/apt
+          .verity-home/libraries/**/*natives-*
+
     - name: Upload reports
-      if: always()
+      if: always() && steps.run.outcome != 'skipped'
       uses: actions/upload-artifact@v4
       with:
-        name: verity-report-${{ runner.os }}${{ inputs.only != '' && format('-{0}', inputs.only) || '' }}
+        name: verity-${{ inputs.mode == 'prepare' && 'prepare' || 'report' }}-${{ runner.os }}${{ inputs.mode == 'run' && inputs.only != '' && format('-{0}', inputs.only) || '' }}
         path: ${{ steps.run.outputs.report-dir }}
         if-no-files-found: warn
 
     - name: Fail on test failures
-      if: steps.run.outputs.exit-code != '0'
+      if: steps.run.outcome != 'skipped' && steps.run.outputs.exit-code != '0'
       shell: bash
       run: |
         echo "::error::Verity reported failures (exit code ${{ steps.run.outputs.exit-code }}). See the job summary and the verity-report artifact."
