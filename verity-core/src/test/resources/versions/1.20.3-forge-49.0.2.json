@@ -1,0 +1,9 @@
+{
+  "id": "1.20.3-forge-49.0.2",
+  "inheritsFrom": "1.20.1",
+  "releaseTime": "2023-12-08T12:00:00+0000",
+  "type": "release",
+  "mainClass": "net.minecraftforge.bootstrap.ForgeBootstrap",
+  "arguments": {"game": ["--launchTarget", "forge_client"], "jvm": []},
+  "libraries": []
+}

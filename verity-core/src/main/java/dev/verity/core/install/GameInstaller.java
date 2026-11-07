@@ -48,20 +48,9 @@ public final class GameInstaller {
         List<VersionJson> chain = ctx.resolver().chain(versionId);
         VersionJson merged = VersionResolver.merge(chain);
         String baseJar = VersionResolver.baseJarId(chain);
-        Rule.Environment env = Rule.Environment.current();
 
         progress.stage("Downloading libraries for " + versionId);
-        List<Downloader.Artifact> libs = new ArrayList<>();
-        for (Libraries.Resolved r : Libraries.resolve(merged, env, ctx.home().libraries())) {
-            if (r.localOnly()) {
-                if (!Files.isRegularFile(r.path())) {
-                    throw new IOException("Library " + r.coordinate() + " should have been produced by the installer but is missing");
-                }
-                continue;
-            }
-            libs.add(r.artifact());
-        }
-        ctx.downloader().downloadAll(libs, progress);
+        downloadLibraries(merged, progress);
 
         // The official launcher runs a child version from its own copy of the base jar (Forge's ignoreList relies on
         // the ${version_name}.jar filename).
@@ -81,6 +70,21 @@ public final class GameInstaller {
         installAssets(merged, progress);
         installLogging(merged);
         return new InstalledVersion(versionId, merged, jar);
+    }
+
+    /** Downloads {@code version}'s libraries; ones an installer generates must already exist. */
+    public void downloadLibraries(VersionJson version, Progress progress) throws IOException {
+        List<Downloader.Artifact> libs = new ArrayList<>();
+        for (Libraries.Resolved r : Libraries.resolve(version, Rule.Environment.current(), ctx.home().libraries())) {
+            if (r.localOnly()) {
+                if (!Files.isRegularFile(r.path())) {
+                    throw new IOException("Library " + r.coordinate() + " should have been produced by the installer but is missing");
+                }
+                continue;
+            }
+            libs.add(r.artifact());
+        }
+        ctx.downloader().downloadAll(libs, progress);
     }
 
     void installAssets(VersionJson v, Progress progress) throws IOException {

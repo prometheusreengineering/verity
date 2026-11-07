@@ -16,7 +16,7 @@ public final class TestVersions {
             Files.createDirectories(dst.getParent());
             try (InputStream in = TestVersions.class.getResourceAsStream("/versions/" + id + ".json")) {
                 if (in == null) throw new IOException("missing fixture " + id);
-                Files.copy(in, dst);
+                Files.copy(in, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
         }
         return versionsDir;

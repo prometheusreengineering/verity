@@ -60,6 +60,8 @@ public final class ClientSession {
     private final Path runDir;
     private final boolean freshInstance;
     private final RunListener listener;
+    private final InstallBarrier barrier;
+    private final AtomicBoolean installReported = new AtomicBoolean();
 
     private final TargetResult result = new TargetResult();
     private final List<CheckResult> checks = Collections.synchronizedList(new ArrayList<>());
@@ -77,7 +79,8 @@ public final class ClientSession {
 
     ClientSession(Target target, Profile profile, Installer installer, HookServer hook, DisplayProvider display, LaunchAccount account,
                   List<Path> mods, List<dev.verity.core.net.Downloader.Artifact> downloads, Path instanceRoot, Path runDir,
-                  boolean freshInstance, RunListener listener) {
+                  boolean freshInstance, RunListener listener, InstallBarrier barrier) {
+        this.barrier = barrier;
         this.target = target;
         this.profile = profile;
         this.installer = installer;
@@ -155,6 +158,7 @@ public final class ClientSession {
                 installer.context().downloader().downloadAll(downloads, progress());
             }
             InstalledVersion version = installer.install(target.minecraft(), target.loader(), loaderVersion, progress());
+            installDone();
             Path java = installer.context().java().javaFor(version, progress());
             if (Os.current() == Os.WINDOWS && display instanceof Win32HiddenDesktop && Win32HiddenDesktop.usesMesa(profile.display)) {
                 try {
@@ -172,6 +176,10 @@ public final class ClientSession {
             result.java = java.toString();
             if (prepareOnly) return finish(Status.PREPARED, "Installed " + version.id(), start);
 
+            if (barrier.shared(target)) {
+                setStatus(Status.QUEUED, "Waiting for other Minecraft " + target.minecraft() + " installs");
+                barrier.await(target);
+            }
             setStatus(Status.QUEUED, "Waiting for a free slot");
             launchPermits.acquire();
             try {
@@ -191,7 +199,14 @@ public final class ClientSession {
                 // best effort
             }
             return finish(Status.ERROR, msg, start);
+        } finally {
+            // A session that ends before or during its install must not hold back the others.
+            installDone();
         }
+    }
+
+    private void installDone() {
+        if (installReported.compareAndSet(false, true)) barrier.installed(target);
     }
 
     private TargetResult launchAndSupervise(InstalledVersion version, Path java, long start) throws Exception {

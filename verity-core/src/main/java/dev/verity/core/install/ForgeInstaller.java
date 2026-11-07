@@ -55,6 +55,9 @@ public final class ForgeInstaller {
             default -> throw new IllegalArgumentException(type + " is not installer based");
         };
         String fileName = url.substring(url.lastIndexOf('/') + 1);
+        // NeoForge's 1.20.1 installers are named forge-<version>-installer.jar like Forge's own, and the two version
+        // ranges overlap; a prefix keeps them from sharing a cached file and a lock.
+        if (type == LoaderType.NEOFORGE) fileName = "neoforge-" + fileName;
         Path installer = ctx.home().installers().resolve(fileName);
         Path marker = ctx.home().installers().resolve(fileName + ".installed");
         return ctx.locks().withLock("install-" + fileName, () -> {
@@ -63,6 +66,9 @@ public final class ForgeInstaller {
                 if (Files.isRegularFile(ctx.resolver().jsonPath(id))) return game.complete(id, progress);
             }
             game.ensureVanilla(mc, progress);
+            // Some processors read vanilla's libraries (1.14.x's installertools needs the realms jar, and downloads it
+            // itself from a URL that no longer works when it's missing), so fetch them before the installer runs.
+            game.downloadLibraries(ctx.meta().mojang().vanillaVersion(mc), progress);
             progress.stage("Downloading " + type.displayName() + " " + loaderVersion + " installer");
             Downloader.Artifact artifact = new Downloader.Artifact(List.of(URI.create(url)), installer, null, -1, true);
             ctx.downloader().download(artifact);
@@ -144,14 +150,19 @@ public final class ForgeInstaller {
                     major = PROCESSOR_MIN_JAVA;
                 }
                 Path java = ctx.java().javaFor(component, major, progress);
-                int i = 0;
-                int total = processors.size();
-                for (JsonNode p : processors) {
-                    i++;
-                    if (!appliesToClient(p)) continue;
-                    progress.stage("Running installer processor " + i + "/" + total);
-                    runProcessor(p, data, java, installerPath.resolveSibling(installerPath.getFileName() + ".log"));
-                }
+                // Every Forge and NeoForge install of one Minecraft version writes the same deobfuscated client and
+                // mappings into the shared libraries; two at once delete and rewrite each other's outputs.
+                ctx.locks().withLock("forge-processors-" + mc, () -> {
+                    int i = 0;
+                    int total = processors.size();
+                    for (JsonNode p : processors) {
+                        i++;
+                        if (!appliesToClient(p)) continue;
+                        progress.stage("Running installer processor " + i + "/" + total);
+                        runProcessor(p, data, java, installerPath.resolveSibling(installerPath.getFileName() + ".log"));
+                    }
+                    return null;
+                });
             } finally {
                 FileUtil.deleteRecursively(work);
             }
@@ -333,9 +344,19 @@ public final class ForgeInstaller {
             if (e.isDirectory() || !e.getName().startsWith("maven/")) continue;
             Path target = libs.resolve(e.getName().substring("maven/".length())).normalize();
             if (!target.startsWith(libs)) continue;
-            if (Files.isRegularFile(target) && Files.size(target) == e.getSize() && crc32(target) == e.getCrc()) continue;
-            extractEntry(zip, e.getName(), target);
+            if (matches(target, e)) continue;
+            try {
+                extractEntry(zip, e.getName(), target);
+            } catch (IOException ex) {
+                // Another install bundling the same file may have just written it, and Windows won't replace a file
+                // that is open (e.g. on a running processor's classpath).
+                if (!matches(target, e)) throw ex;
+            }
         }
+    }
+
+    private static boolean matches(Path target, ZipEntry e) throws IOException {
+        return Files.isRegularFile(target) && Files.size(target) == e.getSize() && crc32(target) == e.getCrc();
     }
 
     static void extractEntry(ZipFile zip, String name, Path target) throws IOException {
