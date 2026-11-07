@@ -51,6 +51,16 @@ class VerityCliTest {
         assertThat(plan.code()).as(plan.err()).isZero();
         assertThat(plan.out()).contains("1.20.1-fabric").contains("+ mod.jar").contains("1.8.9-forge").contains("- mod.jar");
 
+        Result shard = run("plan", "demo", "--shard", "1/2");
+        assertThat(shard.code()).as(shard.err()).isZero();
+        assertThat(shard.out()).contains("1 target(s)").contains("1.20.1-fabric").doesNotContain("1.8.9-forge");
+        Result badPlan = run("plan", "demo", "--shard", "3/2");
+        assertThat(badPlan.code()).isEqualTo(VerityCli.CONFIG_ERROR);
+        assertThat(badPlan.err()).contains("Invalid shard");
+        Result badRun = run("run", "demo", "--shard", "0/2");
+        assertThat(badRun.code()).isEqualTo(VerityCli.CONFIG_ERROR);
+        assertThat(badRun.err()).contains("Invalid shard");
+
         Path exported = tmp.resolve("exported.json");
         assertThat(run("profile", "export", "demo", exported.toString()).code()).isZero();
         assertThat(exported).exists();

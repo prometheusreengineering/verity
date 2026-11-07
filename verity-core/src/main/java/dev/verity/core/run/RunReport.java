@@ -18,6 +18,8 @@ public class RunReport {
 
     @JsonIgnore
     public boolean success() {
+        // Only a shard can run nothing (a profile with no targets is an error), when there are fewer targets than shards.
+        if (results.isEmpty()) return true;
         return results.stream().anyMatch(TargetResult::success)
                 && results.stream().noneMatch(r -> r.status == null || r.status.failure());
     }

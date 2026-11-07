@@ -6,6 +6,7 @@ import dev.verity.core.run.RunHandle;
 import dev.verity.core.run.RunOptions;
 import dev.verity.core.run.RunOrchestrator;
 import dev.verity.core.run.RunReport;
+import dev.verity.core.run.Shard;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +32,10 @@ class RunCommand implements Callable<Integer> {
             description = "Only run matching targets, e.g. 1.20.1-fabric, 1.8.9/forge, fabric, 1.21.1 (repeatable / comma separated).")
     List<String> only = new ArrayList<>();
 
+    @Option(names = "--shard", paramLabel = "I/N",
+            description = "Only run part I of N of the targets, to split a run across CI jobs. `prepare` ignores this.")
+    String shard;
+
     @Option(names = {"-p", "--parallel"}, description = "Max clients at once (default: profile setting or automatic).")
     Integer parallel;
 
@@ -55,6 +60,7 @@ class RunCommand implements Callable<Integer> {
         Profile p = new ProfileStore(root.verityHome()).resolve(profile);
         RunOptions o = new RunOptions();
         o.only = only;
+        o.shard = shard == null ? null : Shard.parse(shard);
         o.maxParallel = parallel;
         try {
             o.display = display == null ? null : Profile.DisplayMode.parse(display);

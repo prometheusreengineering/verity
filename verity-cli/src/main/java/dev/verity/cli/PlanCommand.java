@@ -9,6 +9,7 @@ import dev.verity.core.profile.Profile;
 import dev.verity.core.profile.ProfileStore;
 import dev.verity.core.run.RunOptions;
 import dev.verity.core.run.RunOrchestrator;
+import dev.verity.core.run.Shard;
 import dev.verity.core.run.Target;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -34,6 +35,9 @@ class PlanCommand implements Callable<Integer> {
     @Option(names = {"-o", "--only"}, split = ",", paramLabel = "FILTER")
     List<String> only = new ArrayList<>();
 
+    @Option(names = "--shard", paramLabel = "I/N", description = "Only show part I of N of the targets.")
+    String shard;
+
     @Option(names = "--resolve", description = "Also resolve loader versions (needs network).")
     boolean resolve;
 
@@ -49,10 +53,12 @@ class PlanCommand implements Callable<Integer> {
         InstallContext ctx = root.context();
         RunOptions o = new RunOptions();
         o.only = only;
-        List<Target> targets = new RunOrchestrator(ctx).targets(p, o);
+        List<Target> expanded = new RunOrchestrator(ctx).targets(p, o);
         List<ModResolver.ModFile> mods = ModResolver.expand(p);
-        Map<Target, ModPlanner.TargetPlan> plan = ModPlanner.plan(p, targets, mods, new ModrinthResolver(ctx.modrinth()), ctx.home());
-        long skipping = p.run.onlyTargetsWithAllMods ? plan.values().stream().filter(tp -> !tp.missingEntries().isEmpty()).count() : 0;
+        Map<Target, ModPlanner.TargetPlan> plan = ModPlanner.plan(p, expanded, mods, new ModrinthResolver(ctx.modrinth()), ctx.home());
+        List<Target> targets = shard == null ? expanded
+                : Shard.parse(shard).apply(expanded, t -> p.run.onlyTargetsWithAllMods && !plan.get(t).missingEntries().isEmpty());
+        long skipping = p.run.onlyTargetsWithAllMods ? targets.stream().filter(t -> !plan.get(t).missingEntries().isEmpty()).count() : 0;
         out.println(ansi.string("@|bold " + p.name + "|@: " + targets.size() + " target(s), " + p.mods.size() + " mod entr"
                 + (p.mods.size() == 1 ? "y" : "ies") + (skipping > 0 ? ", " + skipping + " skipped (a mod has no file)" : "")));
         for (Target t : targets) {

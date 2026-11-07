@@ -64,10 +64,13 @@ public final class RunOrchestrator {
      */
     public RunHandle start(Profile profile, RunOptions options, RunListener listener) throws IOException, ProfileException {
         validate(profile);
-        List<Target> targets = targets(profile, options);
-        if (targets.isEmpty()) throw new ProfileException("Profile '" + profile.name + "' has no targets to run");
+        List<Target> expanded = targets(profile, options);
+        if (expanded.isEmpty()) throw new ProfileException("Profile '" + profile.name + "' has no targets to run");
         List<ModResolver.ModFile> mods = ModResolver.expand(profile);
-        Map<Target, ModPlanner.TargetPlan> plan = ModPlanner.plan(profile, targets, mods, new ModrinthResolver(ctx.modrinth()), ctx.home());
+        Map<Target, ModPlanner.TargetPlan> plan = ModPlanner.plan(profile, expanded, mods, new ModrinthResolver(ctx.modrinth()), ctx.home());
+        List<Target> targets = options.shard == null || options.prepareOnly ? expanded
+                : options.shard.apply(expanded, t -> profile.run.onlyTargetsWithAllMods && !plan.get(t).missingEntries().isEmpty());
+        if (targets.isEmpty()) listener.warning("Shard " + options.shard + " has no targets: there are fewer targets than shards");
 
         Profile.DisplayMode mode = options.display != null ? options.display : profile.display.mode;
         DisplayProvider display = options.displayProvider != null ? options.displayProvider : Displays.forMode(mode, ctx);
@@ -76,7 +79,7 @@ public final class RunOrchestrator {
             display.warnings().forEach(listener::warning);
         }
         LaunchAccount account = options.prepareOnly ? LaunchAccount.offline("Verity") : accounts.resolve(profile.account);
-        if (targets.stream().allMatch(t -> t.loader() == dev.verity.core.meta.LoaderType.VANILLA) && !profile.mods.isEmpty()) {
+        if (!targets.isEmpty() && targets.stream().allMatch(t -> t.loader() == dev.verity.core.meta.LoaderType.VANILLA) && !profile.mods.isEmpty()) {
             listener.warning("All targets are vanilla, which cannot load mods");
         }
 
