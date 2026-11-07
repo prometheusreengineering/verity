@@ -186,8 +186,14 @@ class MatrixCommand implements Callable<Integer> {
         if (file == null || !Files.isRegularFile(file)) return;
         String text = Files.readString(file, StandardCharsets.UTF_8).trim();
         List<JsonNode> nodes = new ArrayList<>();
-        if (text.startsWith("[")) Json.tree(text).forEach(nodes::add);
-        else for (String line : text.split("\\R")) if (!line.isBlank()) nodes.add(Json.tree(line));
+        // gh --jq prints one value after another, however it formats them; an array works too.
+        try (var values = Json.MAPPER.readerFor(JsonNode.class).<JsonNode>readValues(text)) {
+            while (values.hasNext()) {
+                JsonNode v = values.next();
+                if (v.isArray()) v.forEach(nodes::add);
+                else nodes.add(v);
+            }
+        }
         for (JsonNode n : nodes) {
             String key = Json.text(n, "key");
             if (key == null) continue;

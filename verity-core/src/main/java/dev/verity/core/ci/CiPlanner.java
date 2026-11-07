@@ -123,13 +123,16 @@ public final class CiPlanner {
         return p[0] + "." + p[1].replaceAll("[^0-9].*", "");
     }
 
-    /** Splits consecutive units into {@code g} groups with the smallest possible largest group (by run cost). */
+    /**
+     * Splits consecutive units into {@code g} groups with the smallest possible largest group, by built-in run cost: the
+     * groups name the caches, so they mustn't move when learned timings change.
+     */
     private List<GroupDef> groups(List<List<Target>> units, int g) {
         int n = units.size();
         double[] w = new double[n + 1];
         for (int i = 0; i < n; i++) {
             double c = 0;
-            for (Target t : units.get(i)) for (CiOs os : o.oses()) c += cost.run(t, os);
+            for (Target t : units.get(i)) for (CiOs os : CiOs.values()) c += CostModel.builtInRun(t, os);
             w[i + 1] = w[i] + c;
         }
         // best[k][i]: smallest largest-group cost splitting the first i units into k groups.
