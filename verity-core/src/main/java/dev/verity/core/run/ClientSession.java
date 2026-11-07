@@ -62,6 +62,7 @@ public final class ClientSession {
     private final RunListener listener;
     private final InstallBarrier barrier;
     private final AtomicBoolean installReported = new AtomicBoolean();
+    private volatile long launchedAt;
 
     private final TargetResult result = new TargetResult();
     private final List<CheckResult> checks = Collections.synchronizedList(new ArrayList<>());
@@ -210,6 +211,7 @@ public final class ClientSession {
     }
 
     private TargetResult launchAndSupervise(InstalledVersion version, Path java, long start) throws Exception {
+        launchedAt = System.currentTimeMillis();
         setStatus(Status.LAUNCHING, "Preparing instance");
         Rule.Environment env = Rule.Environment.current();
         List<Libraries.Resolved> libs = Libraries.resolve(version.version(), env, installer.context().home().libraries());
@@ -503,7 +505,9 @@ public final class ClientSession {
     }
 
     private TargetResult finish(Status status, String message, long start) {
-        result.durationMs = System.currentTimeMillis() - start;
+        long now = System.currentTimeMillis();
+        result.durationMs = now - start;
+        if (launchedAt > 0) result.runMs = now - launchedAt;
         result.checks = new ArrayList<>(checks);
         result.verityLog = new ArrayList<>(verityLog);
         synchronized (tail) {
