@@ -93,6 +93,8 @@ public final class RunOrchestrator {
         HookServer hook = new HookServer();
         List<ClientSession> sessions = new ArrayList<>();
         Map<Target, TargetResult> skipped = new LinkedHashMap<>();
+        InstallBarrier barrier = new InstallBarrier(targets.stream()
+                .filter(t -> !(profile.run.onlyTargetsWithAllMods && !plan.get(t).missingEntries().isEmpty())).toList());
         for (Target t : targets) {
             ModPlanner.TargetPlan tp = plan.get(t);
             if (profile.run.onlyTargetsWithAllMods && !tp.missingEntries().isEmpty()) {
@@ -101,7 +103,7 @@ public final class RunOrchestrator {
             }
             Path instance = ctx.home().instances().resolve(FileUtil.safeName(profile.name)).resolve(t.id());
             sessions.add(new ClientSession(t, profile, installer, hook, display, account, tp.paths(), tp.downloads(), instance,
-                    runDir, !keep, listener));
+                    runDir, !keep, listener, barrier));
         }
         listener.runStarted(profile.name, targets, runDir);
         for (Target t : targets) {
