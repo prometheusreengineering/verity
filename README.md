@@ -257,7 +257,9 @@ jobs:
 
 The action installs Xvfb/Mesa on Linux, caches the Minecraft/loader/Java downloads between workflow runs, writes a
 results table to the job summary, uploads the reports as an artifact, and fails the job if any target fails.
-`.github/workflows/ci.yml` runs Verity's own end-to-end matrix with `samples/testmod`.
+On Windows it also turns off Defender's real-time scanning for the job, which otherwise scans every file the cache
+restores; set `defender: keep` on self-hosted runners. `.github/workflows/ci.yml` runs Verity's own end-to-end matrix
+with `samples/testmod`.
 
 Each profile gets two caches per job, renewed weekly: one shared by every OS (assets, versions, installers, mods,
 metadata, libraries) and one for the OS (Java runtimes, native libraries, Mesa and 7-Zip on Windows, Xvfb packages on

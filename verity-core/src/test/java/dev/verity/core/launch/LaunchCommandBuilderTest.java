@@ -23,7 +23,8 @@ class LaunchCommandBuilderTest {
 
     LaunchRequest request(String id) throws Exception {
         VersionResolver r = new VersionResolver(TestVersions.install(tmp.resolve("versions"), "1.8.9",
-                "1.8.9-forge1.8.9-11.15.1.2318-1.8.9", "1.20.1", "fabric-loader-0.16.14-1.20.1"));
+                "1.8.9-forge1.8.9-11.15.1.2318-1.8.9", "1.20.1", "fabric-loader-0.16.14-1.20.1", "1.20.1-forge-47.2.0",
+                "1.20.3-forge-49.0.2"));
         InstalledVersion v = new InstalledVersion(id, r.resolve(id), tmp.resolve("client.jar"));
         return new LaunchRequest(v, Path.of("/java/bin/java"), tmp.resolve("game"), tmp.resolve("natives"), tmp.resolve("libraries"),
                 tmp.resolve("assets"), tmp.resolve("assets"), tmp.resolve("log.xml"), List.of(Path.of("/a.jar"), Path.of("/b.jar")),
@@ -58,6 +59,18 @@ class LaunchCommandBuilderTest {
         v.javaVersion.component = "java-runtime-gamma";
         assertThat(LaunchCommandBuilder.limitAvx(v, LINUX)).isFalse();
         assertThat(LaunchCommandBuilder.build(request("fabric-loader-0.16.14-1.20.1"), LINUX)).doesNotContain("-XX:UseAVX=2");
+    }
+
+    @Test
+    void forgeBootstrapGetsTheLibraryDirectoryOnce() throws Exception {
+        String libs = "-DlibraryDirectory=" + tmp.resolve("libraries");
+        // Forge 49.0.2's JSON doesn't pass it, and its bootstrap would look in the instance's game dir.
+        List<String> early = LaunchCommandBuilder.build(request("1.20.3-forge-49.0.2"), LINUX);
+        assertThat(early).containsOnlyOnce(libs);
+        assertThat(early.indexOf(libs)).isLessThan(early.indexOf("net.minecraftforge.bootstrap.ForgeBootstrap"));
+        List<String> usual = LaunchCommandBuilder.build(request("1.20.1-forge-47.2.0"), LINUX);
+        assertThat(usual).containsOnlyOnce(libs);
+        assertThat(LaunchCommandBuilder.build(request("fabric-loader-0.16.14-1.20.1"), LINUX)).noneMatch(a -> a.startsWith("-DlibraryDirectory="));
     }
 
     @Test

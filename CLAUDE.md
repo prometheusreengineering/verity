@@ -55,7 +55,9 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 - Forge/NeoForge: `ForgeInstaller` runs installer processors itself. `replaceTokens` mirrors Forge's installer
   semantics exactly; keep it that way. NeoForge versions come from the Reposilite API first, then maven-metadata.xml.
 - Forge processors run on Java 17+ (Forge's expected output hashes come from a modern JVM; Mojang's 8u51 writes
-  different zip bytes), with `-Xmx2048M` and at most 2 at once. Installs aren't limited by `maxParallel`.
+  different zip bytes), with `-Xmx2048M` and at most 2 at once. Installs aren't limited by `maxParallel`. All Forge
+  and NeoForge installs of one Minecraft version write the same mappings and client jars, so their processors take the
+  `forge-processors-<mc>` lock. Vanilla's libraries are downloaded before the processors run (1.14.x reads realms).
 - `VersionResolver.merge` dedupes libraries only across the inheritance chain. Within one JSON, keep duplicates:
   1.14-1.18 list LWJGL twice (macOS 3.2.1, others 3.2.2), and rules pick one.
 - Mojang's Java 16.0.1/17.0.1 runtimes (`java-runtime-alpha`/`beta`, MC 1.17-1.18) crash in the JIT on AVX-512 CPUs,

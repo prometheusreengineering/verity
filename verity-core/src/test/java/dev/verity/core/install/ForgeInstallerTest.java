@@ -100,6 +100,44 @@ class ForgeInstallerTest {
         assertThat(ctx.resolver().resolve(id).mainClass).isEqualTo("cpw.mods.bootstraplauncher.BootstrapLauncher");
     }
 
+    /** An installer whose one processor writes the 1.20.1 client mappings every Forge-style 1.20.1 install shares. */
+    Path sharedOutputInstaller(String id) throws IOException {
+        Path installer = tmp.resolve(id + "-installer.jar");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(installer))) {
+            put(zip, "install_profile.json", ("""
+                    {"spec":1,"version":"%s","json":"/version.json","minecraft":"1.20.1","data":{},
+                     "processors":[{"jar":"net.test:proc:1.0","classpath":[],
+                       "args":["--exclusive","{LIBRARY_DIR}/writing.flag","--sleep","1500","--out","[net.minecraft:client:1.20.1:mappings@txt]"]}],
+                     "libraries":[]}
+                    """).formatted(id).getBytes(StandardCharsets.UTF_8));
+            put(zip, "version.json", ("{\"id\":\"%s\",\"inheritsFrom\":\"1.20.1\",\"mainClass\":\"cpw.mods.bootstraplauncher.BootstrapLauncher\",\"libraries\":[]}")
+                    .formatted(id).getBytes(StandardCharsets.UTF_8));
+            put(zip, "maven/net/test/proc/1.0/proc-1.0.jar", processorJar());
+        }
+        return installer;
+    }
+
+    @Test
+    void installsOfOneMinecraftVersionRunTheirProcessorsOneAtATime() throws Exception {
+        InstallContext ctx = context();
+        TestVersions.install(ctx.home().versions(), "1.20.1");
+        ForgeInstaller fi = new ForgeInstaller(ctx, new GameInstaller(ctx));
+        java.util.List<java.util.concurrent.Future<String>> installs = new java.util.ArrayList<>();
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            for (String id : java.util.List.of("1.20.1-forge-47.2.0", "1.20.1-neoforge-47.1.106")) {
+                Path installer = sharedOutputInstaller(id);
+                installs.add(pool.submit(() -> {
+                    try (ZipFile zip = new ZipFile(installer.toFile())) {
+                        return fi.installModern(zip, installer, ForgeInstaller.readJson(zip, "install_profile.json"), "1.20.1", Progress.NONE);
+                    }
+                }));
+            }
+            // FakeProcessor exits 1 if the other install's processor is running at the same time.
+            for (var f : installs) assertThat(f.get()).startsWith("1.20.1-");
+        }
+        assertThat(ctx.home().libraries().resolve("net/minecraft/client/1.20.1/client-1.20.1-mappings.txt")).exists();
+    }
+
     @Test
     void legacyInstallerWritesVersionAndUniversalJar() throws Exception {
         InstallContext ctx = context();
