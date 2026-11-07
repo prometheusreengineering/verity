@@ -1,0 +1,77 @@
+name: macOS test
+
+# Temporary: finds out what happens when games launch on the Mac runners.
+
+on:
+  push:
+    branches: [feat/macos]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build jars
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew :verity-cli:shadowJar :samples:testmod:shadowJar --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-jars
+          path: |
+            verity-cli/build/libs/verity-cli-*-all.jar
+            samples/testmod/build/libs/verity-testmod-*.jar
+          if-no-files-found: error
+
+  mac:
+    name: Sample mod (${{ matrix.os }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-jars
+          path: jars
+      - name: Place jars
+        id: jars
+        shell: bash
+        run: |
+          mkdir -p samples/testmod/build/libs
+          cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          echo "cli=$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)" >> "$GITHUB_OUTPUT"
+          sysctl -n machdep.cpu.brand_string hw.ncpu hw.memsize
+          sw_vers
+      - name: Start sampler
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/sampler.sh" <<'EOF'
+          while true; do
+            echo "$(date +%s) $(top -l 1 -n 0 | grep -E 'PhysMem|CPU usage' | tr '\n' ' ')"
+            sleep 10
+          done
+          EOF
+          nohup bash "$RUNNER_TEMP/sampler.sh" > "$RUNNER_TEMP/samples.txt" 2>&1 &
+      - name: Run Verity
+        uses: ./
+        with:
+          profile: samples/testmod/macos-probe.json
+          jar: ${{ steps.jars.outputs.cli }}
+          parallel: "2"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-samples-${{ runner.arch }}
+          path: ${{ runner.temp }}/samples.txt
+          if-no-files-found: warn
