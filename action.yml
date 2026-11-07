@@ -73,6 +73,8 @@ runs:
 
     # One cache per OS and profile, so it holds one copy of the files that every loader shares. It stays unchanged
     # until the key rolls over, and the restore keys let a new one start from the previous one.
+    # GitHub keeps 10 GB per repository, so these paths leave out what's cheap to recreate: mods-cache (with one jar
+    # per target it can reach gigabytes) and the Mesa copies of the Java runtimes, which are built from what's cached.
     - name: Restore Verity cache
       id: restore
       if: inputs.cache == 'true'
@@ -85,7 +87,7 @@ runs:
           ${{ runner.temp }}/verity-home/runtimes
           ${{ runner.temp }}/verity-home/installers
           ${{ runner.temp }}/verity-home/tools
-          ${{ runner.temp }}/verity-home/mods-cache
+          !${{ runner.temp }}/verity-home/runtimes/*/*-mesa
         key: verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-${{ steps.key.outputs.week }}
         restore-keys: |
           verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-
@@ -180,7 +182,7 @@ runs:
           ${{ runner.temp }}/verity-home/runtimes
           ${{ runner.temp }}/verity-home/installers
           ${{ runner.temp }}/verity-home/tools
-          ${{ runner.temp }}/verity-home/mods-cache
+          !${{ runner.temp }}/verity-home/runtimes/*/*-mesa
         key: ${{ steps.restore.outputs.cache-primary-key }}
 
     - name: Upload reports
