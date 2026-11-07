@@ -1,0 +1,17 @@
+{
+  "name": "macos-probe",
+  "description": "Temporary: stays alive long enough to show whether a window really opens on the Mac runners.",
+  "targets": [
+    { "minecraft": "1.20.1", "loader": "fabric" },
+    { "minecraft": "1.21.1", "loader": "fabric" },
+    { "minecraft": "26.2", "loader": "fabric" },
+    { "minecraft": "26.3", "loader": "fabric" },
+    { "minecraft": "26.3", "loader": "neoforge" }
+  ],
+  "mods": [
+    { "path": "build/libs/verity-testmod-*.jar" }
+  ],
+  "jvm": { "memoryMb": 2048, "args": ["-Dverity.sample.delay=90"] },
+  "display": { "mode": "headless" },
+  "test": { "startupTimeoutSec": 300, "timeoutSec": 300 }
+}
