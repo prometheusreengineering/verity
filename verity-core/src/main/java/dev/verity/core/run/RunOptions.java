@@ -9,6 +9,8 @@ import java.util.List;
 public class RunOptions {
     /** Only run targets matching any of these filters (see {@link Target#matchesFilter}). */
     public List<String> only = new ArrayList<>();
+    /** Only run this part of the targets; ignored by {@link #prepareOnly}, which must install all of them. */
+    public Shard shard;
     public Integer maxParallel;
     public Profile.DisplayMode display;
     /** Where reports go; default {@code <home>/runs/<timestamp>-<profile>}. */
