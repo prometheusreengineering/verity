@@ -248,7 +248,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mvn -B package            # build your mod
-      - uses: prometheusreengineering/verity@v0.1.0
+      - uses: prometheusreengineering/verity@v0.1.1
         with:
           profile: verity.json
           # only: "1.8.9,1.20.1-fabric"
@@ -274,7 +274,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mvn -B package            # the profile's mods must exist
-      - uses: prometheusreengineering/verity@v0.1.0
+      - uses: prometheusreengineering/verity@v0.1.1
         with:
           mode: prepare
           profile: verity.json
@@ -288,7 +288,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mvn -B package
-      - uses: prometheusreengineering/verity@v0.1.0
+      - uses: prometheusreengineering/verity@v0.1.1
         with:
           profile: verity.json
           only: ${{ matrix.loader }}
