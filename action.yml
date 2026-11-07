@@ -68,12 +68,16 @@ runs:
       shell: bash
       env:
         MODE: ${{ inputs.mode }}
-        HASH: ${{ hashFiles(inputs.profile) }}
+        PROFILE: ${{ inputs.profile }}
       run: |
         if [ "$MODE" != run ] && [ "$MODE" != prepare ]; then
           echo "::error::Unknown mode '$MODE' (expected run or prepare)."
           exit 1
         fi
+        # Not hashFiles: Windows checks files out with CRLF, which would give each OS its own shared cache. A missing
+        # profile is left for Verity to report.
+        HASH=none
+        if [ -f "$PROFILE" ]; then HASH="$(tr -d '\r' < "$PROFILE" | sha256sum | cut -d' ' -f1)"; fi
         # Selectors pick up new Minecraft releases without the profile changing, so the caches also roll over weekly.
         week="$(date -u +%G-W%V)"
         {
@@ -277,10 +281,12 @@ runs:
     # Exit code 1 is a failing test, which still installed everything.
     #
     # Nothing regenerates a library missing from the cache, because the installer's marker says it's already installed.
+    # The outcome check matters: a skipped step's exit code is null, and null == '0' is true in an expression.
     - name: Check the caches can hold every library
       id: save
       if: >-
-        inputs.cache == 'true' && (steps.run.outputs.exit-code == '0' || (inputs.mode == 'run' && steps.run.outputs.exit-code == '1'))
+        inputs.cache == 'true' && steps.run.outcome == 'success'
+        && (steps.run.outputs.exit-code == '0' || (inputs.mode == 'run' && steps.run.outputs.exit-code == '1'))
         && (inputs.mode == 'prepare' || inputs.only == '')
       shell: bash
       run: |
