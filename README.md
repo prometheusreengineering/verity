@@ -259,6 +259,41 @@ The action installs Xvfb/Mesa on Linux, caches the Minecraft/loader/Java downloa
 results table to the job summary, uploads the reports as an artifact, and fails the job if any target fails.
 `.github/workflows/ci.yml` runs Verity's own end-to-end matrix with `samples/testmod`.
 
+The cache is one entry per OS and profile, renewed weekly. To split a profile across jobs with `only`, add a prepare
+job per OS first, because jobs that use `only` restore the cache but don't save it. A prepare job does nothing when the
+cache is already complete, and `continue-on-error` lets the tests run (and download what they need) if it fails:
+
+```yaml
+jobs:
+  prepare:
+    continue-on-error: true
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: mvn -B package            # the profile's mods must exist
+      - uses: prometheusreengineering/verity@v0.1.0
+        with:
+          mode: prepare
+          profile: verity.json
+  verity:
+    needs: prepare
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        loader: [fabric, forge, neoforge]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: mvn -B package
+      - uses: prometheusreengineering/verity@v0.1.0
+        with:
+          profile: verity.json
+          only: ${{ matrix.loader }}
+```
+
 ## Where things are stored
 
 `%LOCALAPPDATA%\Verity` on Windows, `$XDG_DATA_HOME/verity` (`~/.local/share/verity`) on Linux, or `--home` /

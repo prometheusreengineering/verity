@@ -9,8 +9,14 @@ inputs:
   profile:
     description: Path to a Verity profile JSON (e.g. verity.json in your mod repository).
     required: true
+  mode:
+    description: >-
+      "run" tests the targets. "prepare" installs everything the whole profile needs without launching and saves it
+      as the cache; run it in one job per OS before a matrix that uses "only", because those jobs don't save a cache.
+    required: false
+    default: run
   only:
-    description: Comma separated target filters (e.g. "1.20.1-fabric,1.8.9").
+    description: Comma separated target filters (e.g. "1.20.1-fabric,1.8.9"). Ignored when mode is "prepare".
     required: false
     default: ""
   parallel:
@@ -52,22 +58,25 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Set up Java for Verity
-      uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: "21"
-
-    - name: Install virtual display and software OpenGL (Linux)
-      if: runner.os == 'Linux'
+    - name: Check inputs and pick the cache key
+      id: key
       shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
       run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq xvfb x11-xserver-utils libgl1-mesa-dri libglx-mesa0 mesa-utils > /dev/null
+        if [ "$MODE" != run ] && [ "$MODE" != prepare ]; then
+          echo "::error::Unknown mode '$MODE' (expected run or prepare)."
+          exit 1
+        fi
+        # Selectors pick up new Minecraft releases without the profile changing, so the cache also rolls over weekly.
+        echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
+    # One cache per OS and profile, so it holds one copy of the files that every loader shares. It stays unchanged
+    # until the key rolls over, and the restore keys let a new one start from the previous one.
     - name: Restore Verity cache
+      id: restore
       if: inputs.cache == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: |
           ${{ runner.temp }}/verity-home/libraries
@@ -76,15 +85,29 @@ runs:
           ${{ runner.temp }}/verity-home/runtimes
           ${{ runner.temp }}/verity-home/installers
           ${{ runner.temp }}/verity-home/tools
-        # "only" is part of the key so parallel jobs that shard one profile keep separate caches.
-        key: verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-${{ inputs.only }}-${{ github.run_id }}
+          ${{ runner.temp }}/verity-home/mods-cache
+        key: verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-${{ steps.key.outputs.week }}
         restore-keys: |
-          verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-${{ inputs.only }}-
           verity-${{ runner.os }}-${{ hashFiles(inputs.profile) }}-
           verity-${{ runner.os }}-
 
+    - name: Set up Java for Verity
+      if: inputs.mode != 'prepare' || steps.restore.outputs.cache-hit != 'true'
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "21"
+
+    - name: Install virtual display and software OpenGL (Linux)
+      if: runner.os == 'Linux' && inputs.mode != 'prepare'
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq xvfb x11-xserver-utils libgl1-mesa-dri libglx-mesa0 mesa-utils > /dev/null
+
     - name: Get Verity
       id: jar
+      if: inputs.mode != 'prepare' || steps.restore.outputs.cache-hit != 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
@@ -105,10 +128,12 @@ runs:
 
     - name: Run Verity
       id: run
+      if: inputs.mode != 'prepare' || steps.restore.outputs.cache-hit != 'true'
       shell: bash
       env:
         VERITY_HOME: ${{ runner.temp }}/verity-home
         GITHUB_TOKEN: ${{ github.token }}
+        MODE: ${{ inputs.mode }}
         PROFILE: ${{ inputs.profile }}
         ONLY: ${{ inputs.only }}
         PARALLEL: ${{ inputs.parallel }}
@@ -120,8 +145,8 @@ runs:
         # Git Bash on Windows prints /d/a/...; actions and Java need D:\a\...
         if [ "$RUNNER_OS" = "Windows" ]; then report="$(cygpath -w "$report")"; fi
         echo "report-dir=$report" >> "$GITHUB_OUTPUT"
-        args=(run "$PROFILE" --report-dir "$report")
-        [ -n "$ONLY" ] && args+=(--only "$ONLY")
+        args=("$MODE" "$PROFILE" --report-dir "$report")
+        [ -n "$ONLY" ] && [ "$MODE" = run ] && args+=(--only "$ONLY")
         [ -n "$PARALLEL" ] && args+=(--parallel "$PARALLEL")
         set +e
         # shellcheck disable=SC2086
@@ -132,23 +157,42 @@ runs:
 
     - name: Summarize
       id: summary
-      if: always()
+      if: always() && steps.run.outcome != 'skipped'
       shell: bash
       env:
         REPORT: ${{ steps.run.outputs.report-dir }}
         PYTHONIOENCODING: utf-8
       run: python3 "${{ github.action_path }}/.github/scripts/summary.py" "$REPORT/report.json"
 
+    # A failed prepare saves nothing: an incomplete cache under this key would stay until the key rolls over. A plain
+    # run saves too, for workflows with no prepare job, unless "only" means it installed just part of the profile.
+    # Exit code 1 is a failing test, which still installed everything.
+    - name: Save Verity cache
+      if: >-
+        inputs.cache == 'true' && steps.restore.outputs.cache-hit != 'true' && (steps.run.outputs.exit-code == '0'
+        || (inputs.mode == 'run' && steps.run.outputs.exit-code == '1')) && (inputs.mode == 'prepare' || inputs.only == '')
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ${{ runner.temp }}/verity-home/libraries
+          ${{ runner.temp }}/verity-home/assets
+          ${{ runner.temp }}/verity-home/versions
+          ${{ runner.temp }}/verity-home/runtimes
+          ${{ runner.temp }}/verity-home/installers
+          ${{ runner.temp }}/verity-home/tools
+          ${{ runner.temp }}/verity-home/mods-cache
+        key: ${{ steps.restore.outputs.cache-primary-key }}
+
     - name: Upload reports
-      if: always()
+      if: always() && steps.run.outcome != 'skipped'
       uses: actions/upload-artifact@v4
       with:
-        name: verity-report-${{ runner.os }}${{ inputs.only != '' && format('-{0}', inputs.only) || '' }}
+        name: verity-${{ inputs.mode == 'prepare' && 'prepare' || 'report' }}-${{ runner.os }}${{ inputs.mode == 'run' && inputs.only != '' && format('-{0}', inputs.only) || '' }}
         path: ${{ steps.run.outputs.report-dir }}
         if-no-files-found: warn
 
     - name: Fail on test failures
-      if: steps.run.outputs.exit-code != '0'
+      if: steps.run.outcome != 'skipped' && steps.run.outputs.exit-code != '0'
       shell: bash
       run: |
         echo "::error::Verity reported failures (exit code ${{ steps.run.outputs.exit-code }}). See the job summary and the verity-report artifact."

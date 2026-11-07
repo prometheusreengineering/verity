@@ -55,9 +55,43 @@ jobs:
             samples/testmod/build/libs/verity-testmod-*.jar
           if-no-files-found: error
 
+  # Fills the one cache per OS that every loader job below restores.
+  prepare:
+    name: Prepare (${{ matrix.os }})
+    needs: build
+    # The test jobs can still download what they need themselves.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: full-matrix-jars
+          path: jars
+      - name: Place jars
+        id: jars
+        shell: bash
+        run: |
+          mkdir -p samples/testmod/build/libs
+          cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
+          if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
+          echo "cli=$jar" >> "$GITHUB_OUTPUT"
+      - name: Prepare Verity
+        uses: ./
+        with:
+          mode: prepare
+          profile: samples/testmod/verity-full.json
+          jar: ${{ steps.jars.outputs.cli }}
+
   e2e:
     name: ${{ matrix.loader }} (${{ matrix.os }})
-    needs: build
+    needs: [build, prepare]
     strategy:
       fail-fast: false
       matrix:
