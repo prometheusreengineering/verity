@@ -68,6 +68,9 @@ outputs:
 # relative because an absolute path doesn't match across OSes, which is why the home is in the
 # workspace. The libraries are matched by file type: the cache action passes a matched directory to tar whole, ignoring
 # exclusions in it, and the natives must stay out of the shared cache.
+# Left out because Verity rebuilds them for free: each loader version's copy of the client jar (versions/<id> with a
+# hyphen; vanilla releases have none), installer jars once their .installed marker exists, and Forge's -slim jars,
+# which only feed its installer. Together they were over a third of the shared cache.
 runs:
   using: composite
   steps:
@@ -105,8 +108,10 @@ runs:
         key: ${{ steps.key.outputs.shared }}
         path: |
           .verity-home/assets
-          .verity-home/versions
-          .verity-home/installers
+          .verity-home/versions/*/*.json
+          .verity-home/versions/*/*.jar
+          !.verity-home/versions/*-*/*.jar
+          .verity-home/installers/*.installed
           .verity-home/mods-cache
           .verity-home/meta-cache
           .verity-home/libraries/**/*.jar
@@ -118,6 +123,7 @@ runs:
           .verity-home/libraries/**/*.srg
           .verity-home/libraries/**/*.tsrg
           !.verity-home/libraries/**/*natives-*
+          !.verity-home/libraries/**/*-slim.jar
 
     - name: Look for the OS cache
       id: lookup-os
@@ -167,8 +173,10 @@ runs:
           verity-shared-${{ steps.key.outputs.hash }}-
         path: |
           .verity-home/assets
-          .verity-home/versions
-          .verity-home/installers
+          .verity-home/versions/*/*.json
+          .verity-home/versions/*/*.jar
+          !.verity-home/versions/*-*/*.jar
+          .verity-home/installers/*.installed
           .verity-home/mods-cache
           .verity-home/meta-cache
           .verity-home/libraries/**/*.jar
@@ -180,6 +188,7 @@ runs:
           .verity-home/libraries/**/*.srg
           .verity-home/libraries/**/*.tsrg
           !.verity-home/libraries/**/*natives-*
+          !.verity-home/libraries/**/*-slim.jar
 
     - name: Restore the OS cache
       id: restore-os
@@ -325,8 +334,10 @@ runs:
         key: ${{ steps.key.outputs.shared }}
         path: |
           .verity-home/assets
-          .verity-home/versions
-          .verity-home/installers
+          .verity-home/versions/*/*.json
+          .verity-home/versions/*/*.jar
+          !.verity-home/versions/*-*/*.jar
+          .verity-home/installers/*.installed
           .verity-home/mods-cache
           .verity-home/meta-cache
           .verity-home/libraries/**/*.jar
@@ -338,6 +349,7 @@ runs:
           .verity-home/libraries/**/*.srg
           .verity-home/libraries/**/*.tsrg
           !.verity-home/libraries/**/*natives-*
+          !.verity-home/libraries/**/*-slim.jar
 
     - name: Save the OS cache
       if: steps.save.outputs.ok == 'true' && steps.restore-os.outputs.cache-hit != 'true'
