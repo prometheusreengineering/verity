@@ -200,6 +200,55 @@ class RunOrchestratorTest {
     }
 
     @Test
+    void shardsRunTheirPartAndAnEmptyShardPasses() throws Exception {
+        VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
+        Profile p = fakeProfile(home, "fake-pass", "fake-idle");
+
+        List<String> ran = new java.util.ArrayList<>();
+        for (int i = 1; i <= 2; i++) {
+            RunOptions opts = new RunOptions();
+            opts.displayProvider = NO_DISPLAY;
+            opts.shard = new Shard(i, 2);
+            opts.reportDir = tmp.resolve("report" + i);
+            RunReport report = new RunOrchestrator(context(home)).start(p, opts, new RunListener() {
+            }).report().get(120, TimeUnit.SECONDS);
+            assertThat(report.results).hasSize(1);
+            assertThat(report.success()).isTrue();
+            ran.add(report.results.get(0).id);
+        }
+        assertThat(ran).containsExactlyInAnyOrder("fake-pass-vanilla", "fake-idle-vanilla");
+
+        RunOptions empty = new RunOptions();
+        empty.displayProvider = NO_DISPLAY;
+        empty.shard = new Shard(3, 3);
+        empty.reportDir = tmp.resolve("report-empty");
+        List<String> warnings = Collections.synchronizedList(new java.util.ArrayList<>());
+        RunReport report = new RunOrchestrator(context(home)).start(p, empty, new RunListener() {
+            @Override
+            public void warning(String message) {
+                warnings.add(message);
+            }
+        }).report().get(120, TimeUnit.SECONDS);
+        assertThat(report.results).isEmpty();
+        assertThat(report.success()).isTrue();
+        assertThat(warnings).anyMatch(w -> w.contains("Shard 3/3 has no targets"));
+    }
+
+    @Test
+    void prepareInstallsEveryTargetWhateverTheShard() throws Exception {
+        VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
+        Profile p = fakeProfile(home, "fake-pass", "fake-idle");
+        RunOptions opts = new RunOptions();
+        opts.displayProvider = NO_DISPLAY;
+        opts.prepareOnly = true;
+        opts.shard = new Shard(1, 2);
+        opts.reportDir = tmp.resolve("report");
+        RunReport report = new RunOrchestrator(context(home)).start(p, opts, new RunListener() {
+        }).report().get(120, TimeUnit.SECONDS);
+        assertThat(report.results).hasSize(2).allMatch(r -> r.status == Status.PREPARED);
+    }
+
+    @Test
     void ignoresCrashReportsLeftInAKeptInstanceByAnEarlierRun() throws Exception {
         VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
         Profile p = fakeProfile(home, "fake-quit");

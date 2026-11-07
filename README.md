@@ -218,10 +218,10 @@ Then set `"account": {"type": "msa"}` (plus `"id"` if several accounts are store
 ## CLI reference
 
 ```text
-verity run <profile|file> [--only 1.20.1-fabric,1.8.9] [--parallel N] [--display headless|window]
+verity run <profile|file> [--only 1.20.1-fabric,1.8.9] [--shard I/N] [--parallel N] [--display headless|window]
                           [--report-dir DIR] [--[no-]keep-instances] [--logs]
 verity prepare <profile>        install everything, don't launch (CI cache warm-up)
-verity plan <profile> [-v] [--resolve]
+verity plan <profile> [-v] [--resolve] [--shard I/N]
 verity profile list | show <p> | new <name> -t MC[:LOADER[:VERSION]] -m PATH [--modrinth PROJECT[@VERSION]]
                [--select RANGE --loaders a,b --latest-patch] [--select-modrinth PROJECT,...] [--only-with-all-mods]
                [--smoke SECONDS] | rm <p> | import <file> | export <p> <file>
@@ -262,7 +262,7 @@ results table to the job summary, uploads the reports as an artifact, and fails 
 Each profile gets two caches per job, renewed weekly: one shared by every OS (assets, versions, installers, mods,
 metadata, libraries) and one for the OS (Java runtimes, native libraries, Mesa and 7-Zip on Windows, Xvfb packages on
 Linux). Verity's home lives in `.verity-home` in the workspace, because a cache only restores across OSes from a
-relative path. To split a profile across jobs with `only`, add a prepare job per OS first, because jobs that use `only`
+relative path. To split a profile across jobs with `only` or `shard`, add a prepare job per OS first, because those jobs
 restore the caches but don't save them. A prepare job does nothing when the caches are already complete, and
 `continue-on-error` lets the tests run (and download what they need) if it fails:
 
@@ -295,6 +295,21 @@ jobs:
         with:
           profile: verity.json
           only: ${{ matrix.loader }}
+```
+
+A client is CPU-bound, so a runner finishes about the same number of targets a minute however many clients it runs, and
+more runners are what make a run faster. `shard` splits the targets evenly, with each loader spread across the shards,
+and works from the current target list, so it keeps up with profiles that select versions automatically:
+
+```yaml
+    strategy:
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: prometheusreengineering/verity@v0.1.1
+        with:
+          profile: verity.json
+          shard: ${{ matrix.shard }}/6
 ```
 
 ## Where things are stored
