@@ -56,8 +56,9 @@ outputs:
     value: ${{ steps.run.outputs.report-dir }}
 
 # Two caches per job: one shared by every OS and one for this OS, which together hold the whole Verity home except what
-# each run creates. They stay unchanged until the key rolls over, and the restore keys let a new one start from the
-# previous one. Paths are relative because an absolute path doesn't match across OSes, which is why the home is in the
+# each run creates. They stay unchanged until the key rolls over, and the restore keys let a new one start from last
+# week's. They stop at the profile, because a cache started from another profile would keep its files forever. Paths are
+# relative because an absolute path doesn't match across OSes, which is why the home is in the
 # workspace. The libraries are matched by file type: the cache action passes a matched directory to tar whole, ignoring
 # exclusions in it, and the natives must stay out of the shared cache.
 runs:
@@ -145,7 +146,6 @@ runs:
         key: ${{ steps.key.outputs.shared }}
         restore-keys: |
           verity-shared-${{ steps.key.outputs.hash }}-
-          verity-shared-
         path: |
           .verity-home/assets
           .verity-home/versions
@@ -170,7 +170,6 @@ runs:
         key: ${{ steps.key.outputs.os }}
         restore-keys: |
           verity-${{ runner.os }}-${{ steps.key.outputs.hash }}-
-          verity-${{ runner.os }}-
         path: |
           .verity-home/runtimes
           .verity-home/tools
