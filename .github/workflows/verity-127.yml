@@ -1,0 +1,101 @@
+name: Verity 127 benchmark
+
+# Temporary: how fast Verity gets through every non-vanilla target. The OS list and SHARDS change per run.
+
+on:
+  push:
+    branches: [test/verity-127]
+
+permissions:
+  contents: read
+
+env:
+  SHARDS: "10"
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew :verity-cli:shadowJar :samples:testmod:shadowJar --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-jars
+          path: |
+            verity-cli/build/libs/verity-cli-*-all.jar
+            samples/testmod/build/libs/verity-testmod-*.jar
+          if-no-files-found: error
+
+  prepare:
+    name: Prepare (${{ matrix.os }})
+    needs: build
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-jars
+          path: jars
+      - name: Place jars
+        id: jars
+        shell: bash
+        run: |
+          mkdir -p samples/testmod/build/libs
+          cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
+          if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
+          echo "cli=$jar" >> "$GITHUB_OUTPUT"
+      - uses: ./
+        with:
+          mode: prepare
+          profile: samples/testmod/verity-all.json
+          jar: ${{ steps.jars.outputs.cli }}
+
+  verity:
+    name: Shard ${{ matrix.shard }} (${{ matrix.os }})
+    needs: [build, prepare]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        include:
+          - os: ubuntu-latest
+            parallel: "6"
+          - os: windows-latest
+            parallel: "5"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-jars
+          path: jars
+      - name: Place jars
+        id: jars
+        shell: bash
+        run: |
+          mkdir -p samples/testmod/build/libs
+          cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
+          if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
+          echo "cli=$jar" >> "$GITHUB_OUTPUT"
+      - uses: ./
+        with:
+          profile: samples/testmod/verity-all.json
+          jar: ${{ steps.jars.outputs.cli }}
+          shard: ${{ matrix.shard }}/${{ env.SHARDS }}
+          parallel: ${{ matrix.parallel }}

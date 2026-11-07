@@ -1,0 +1,13 @@
+{
+  "name": "verity-sample-all",
+  "description": "Temporary benchmark: the sample mod on every non-vanilla target Verity supports.",
+  "targets": [
+    { "select": { "minecraft": ">=1.7.10", "loaders": ["fabric", "forge", "neoforge"] } }
+  ],
+  "mods": [
+    { "path": "build/libs/verity-testmod-*.jar" }
+  ],
+  "jvm": { "memoryMb": 2048, "args": ["-Dverity.sample.delay=15"] },
+  "display": { "mode": "headless" },
+  "test": { "startupTimeoutSec": 300, "timeoutSec": 420 }
+}
