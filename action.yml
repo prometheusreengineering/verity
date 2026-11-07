@@ -75,6 +75,7 @@ runs:
     # until the key rolls over, and the restore keys let a new one start from the previous one.
     # GitHub keeps 10 GB per repository, so these paths leave out what's cheap to recreate: mods-cache (with one jar
     # per target it can reach gigabytes) and the Mesa copies of the Java runtimes, which are built from what's cached.
+    # The runtimes path needs its */*: the cache action passes a matched directory to tar whole, ignoring exclusions in it.
     - name: Restore Verity cache
       id: restore
       if: inputs.cache == 'true'
@@ -84,7 +85,7 @@ runs:
           ${{ runner.temp }}/verity-home/libraries
           ${{ runner.temp }}/verity-home/assets
           ${{ runner.temp }}/verity-home/versions
-          ${{ runner.temp }}/verity-home/runtimes
+          ${{ runner.temp }}/verity-home/runtimes/*/*
           ${{ runner.temp }}/verity-home/installers
           ${{ runner.temp }}/verity-home/tools
           !${{ runner.temp }}/verity-home/runtimes/*/*-mesa
@@ -179,7 +180,7 @@ runs:
           ${{ runner.temp }}/verity-home/libraries
           ${{ runner.temp }}/verity-home/assets
           ${{ runner.temp }}/verity-home/versions
-          ${{ runner.temp }}/verity-home/runtimes
+          ${{ runner.temp }}/verity-home/runtimes/*/*
           ${{ runner.temp }}/verity-home/installers
           ${{ runner.temp }}/verity-home/tools
           !${{ runner.temp }}/verity-home/runtimes/*/*-mesa
