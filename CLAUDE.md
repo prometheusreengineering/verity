@@ -27,6 +27,11 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 - Pushing a `v*` tag releases: `release.yml` takes the version from the tag, deploys `verity-api` to
   `prometheusreengineering/maven` (needs the `MAVEN_REPO_DEPLOY_KEY` secret) and GitHub Packages, then creates the
   GitHub release that `action.yml` downloads from.
+- `action.yml` caches: one shared across OSes plus one per OS, keyed by a line-ending-free profile hash (`hashFiles` sees
+  CRLF on Windows) and the week. Keep the cache's `path` lists identical everywhere, as they're part of its identity. A
+  matched directory goes to tar whole, ignoring exclusions in it, so libraries are matched by file type. The installer
+  marker means a missing generated library is never rebuilt, so add new library file types to the lists and the check.
+  A skipped step's output is null, and `null == '0'` is true in an expression, so check `outcome` too.
 
 ## Layout
 

@@ -259,9 +259,12 @@ The action installs Xvfb/Mesa on Linux, caches the Minecraft/loader/Java downloa
 results table to the job summary, uploads the reports as an artifact, and fails the job if any target fails.
 `.github/workflows/ci.yml` runs Verity's own end-to-end matrix with `samples/testmod`.
 
-The cache is one entry per OS and profile, renewed weekly. To split a profile across jobs with `only`, add a prepare
-job per OS first, because jobs that use `only` restore the cache but don't save it. A prepare job does nothing when the
-cache is already complete, and `continue-on-error` lets the tests run (and download what they need) if it fails:
+Each profile gets two caches per job, renewed weekly: one shared by every OS (assets, versions, installers, mods,
+metadata, libraries) and one for the OS (Java runtimes, native libraries, Mesa and 7-Zip on Windows, Xvfb packages on
+Linux). Verity's home lives in `.verity-home` in the workspace, because a cache only restores across OSes from a
+relative path. To split a profile across jobs with `only`, add a prepare job per OS first, because jobs that use `only`
+restore the caches but don't save them. A prepare job does nothing when the caches are already complete, and
+`continue-on-error` lets the tests run (and download what they need) if it fails:
 
 ```yaml
 jobs:
