@@ -12,6 +12,8 @@ public class TargetResult {
     public Status status;
     public String message;
     public long durationMs;
+    /** From launching the game to the end, without installing or waiting for a slot; null if it never launched. */
+    public Long runMs;
     public Integer exitCode;
     public String java;
     public String display;

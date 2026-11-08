@@ -222,6 +222,8 @@ verity run <profile|file> [--only 1.20.1-fabric,1.8.9] [--shard I/N] [--parallel
                           [--report-dir DIR] [--[no-]keep-instances] [--logs]
 verity prepare <profile>        install everything, don't launch (CI cache warm-up)
 verity plan <profile> [-v] [--resolve] [--shard I/N]
+verity matrix <profile> [--os linux,windows] [--max-runners 20] [--knee-seconds 15] [--history DIR] [--caches FILE]
+                        plan a CI run across runners, as GitHub Actions matrix JSON
 verity profile list | show <p> | new <name> -t MC[:LOADER[:VERSION]] -m PATH [--modrinth PROJECT[@VERSION]]
                [--select RANGE --loaders a,b --latest-patch] [--select-modrinth PROJECT,...] [--only-with-all-mods]
                [--smoke SECONDS] | rm <p> | import <file> | export <p> <file>
@@ -313,6 +315,73 @@ and works from the current target list, so it keeps up with profiles that select
           profile: verity.json
           shard: ${{ matrix.shard }}/6
 ```
+
+### Fastest CI: let Verity plan the run
+
+In `plan` mode the action decides everything for you: how many runners (up to `max-runners`, adding one only while it
+saves at least `knee-seconds`), how to split the runners between the OSes so they finish together, which targets each
+runner gets, and how to group the caches. Targets are cached in groups of neighbouring Minecraft versions, and each
+runner restores only its group's caches instead of the whole profile's. Missing caches are filled by one prepare job
+per group and OS, all at once. The plan learns from the last finished run of the same workflow, so a slow mod gets more
+runners; it needs `actions: read` for that and to see which caches exist.
+
+```yaml
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      prepare: ${{ steps.plan.outputs.prepare }}
+      shards: ${{ steps.plan.outputs.shards }}
+      has-prepare: ${{ steps.plan.outputs.has-prepare }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        uses: prometheusreengineering/verity@v0.2.0
+        with:
+          mode: plan
+          profile: verity.json
+          os: linux,windows
+          # max-runners: "20"
+
+  prepare:
+    needs: plan
+    if: needs.plan.outputs.has-prepare == 'true'
+    continue-on-error: true
+    strategy:
+      matrix: ${{ fromJSON(needs.plan.outputs.prepare) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: mvn -B package            # the profile's mods must exist
+      - uses: prometheusreengineering/verity@v0.2.0
+        with:
+          profile: verity.json
+          job: ${{ toJSON(matrix) }}
+
+  verity:
+    needs: [plan, prepare]
+    # Also when prepare was skipped because every cache exists.
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.shards) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: mvn -B package
+      - uses: prometheusreengineering/verity@v0.2.0
+        with:
+          profile: verity.json
+          job: ${{ toJSON(matrix) }}
+```
+
+The plan job writes its decisions and predicted times to the job summary. The same `verity matrix` command is on the
+CLI. Group caches still count against GitHub's 10 GB per repository; the plan keeps them under `--cache-budget-gb`
+when it can, and says so when even one group is too big.
 
 ## Where things are stored
 

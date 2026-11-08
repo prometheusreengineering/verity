@@ -12,7 +12,7 @@ import picocli.CommandLine.Option;
 /** {@code verity} command line entry point. */
 @Command(name = "verity", mixinStandardHelpOptions = true, versionProvider = VerityCli.Version.class,
         description = {"Launch many Minecraft clients (vanilla, Fabric, Forge, NeoForge) in parallel to test version-independent mods."},
-        subcommands = {RunCommand.class, PlanCommand.class, PrepareCommand.class, ProfileCommand.class, VersionsCommand.class,
+        subcommands = {RunCommand.class, PlanCommand.class, PrepareCommand.class, MatrixCommand.class, ProfileCommand.class, VersionsCommand.class,
                 AccountCommand.class, ModrinthCommand.class, CacheCommand.class, UiCommand.class, CommandLine.HelpCommand.class})
 public final class VerityCli implements Runnable {
     /** Exit codes. */

@@ -11,16 +11,60 @@ come from the GitHub API and the saved `report.json` files, re-checked on 2026-1
 
 ## Summary
 
+- **Plan mode is the fastest layout.** With `mode: plan`, all 127 targets on both OSes take **7 minutes warm** and
+  **14.4 minutes cold**, against 9.3 and 27–30 minutes with a fixed 10 + 10 runners and one shared cache. See
+  [Automatic planning](#automatic-planning-2026-11-07).
 - **Clients are CPU-bound.** A runner gets through about 3 targets a minute on Linux and about 2.2 on Windows,
   whether it runs 3 or 7 clients at once. To go faster, add runners (`shard`), not clients.
-- **Every non-vanilla target (127) takes about 5 minutes warm on 20 Linux runners**, about 8 minutes on 20 Windows
-  runners, and about 9 minutes on 10 of each. Cold runs take 15–30 minutes, mostly the one-time install in the
-  prepare job.
-- **Windows is about 1.5× slower than Linux** at everything: installs, restoring caches and running clients.
-- **With many shards, the cache becomes the bottleneck.** On 20 runners, each shard restores the whole 9 GB shared
-  cache to use 6 or 7 targets of it, and that takes as long as running them.
-- **127 targets don't fit the free plan's 10 GB cache:** 9.6 GB on Linux alone, 10.3 GB on Windows alone and 10.8 GB
-  for both. GitHub evicts the least recently used cache once a repository goes over the limit.
+- **Windows is about 1.5× slower than Linux** at everything: installs, restoring caches and running clients, so the
+  planner gives it more runners.
+- **Caches per group of Minecraft versions beat one big cache.** Each runner restores only the group it runs, and
+  each group's prepare job installs in parallel with the others.
+- **127 targets on both OSes fit the free plan's 10 GB cache (9.91 GB)**, now that the shared cache leaves out what
+  Verity rebuilds for free. It's close to the limit, and caches from other branches count too. GitHub evicts the
+  least recently used cache once a repository goes over.
+
+## Automatic planning (2026-11-07)
+
+The 127 targets from [the benchmark below](#the-127-target-benchmark-2026-11-07), run with the plan, prepare and
+test jobs from the README's "Fastest CI" example (`max-runners: 20`, default knee). The plan job chose the runners,
+the OS split, the cache groups and the shards itself, learning from the previous run's timings. All runs include the
+installer race fix, `-DlibraryDirectory` and Defender off. Every target ran exactly once, and every run passed 126
+of 127: only `1.16.1-forge` failed, as [before](#failures).
+
+### Both OSes, with the smaller shared cache
+
+The layout that [PR #7](https://github.com/prometheusreengineering/verity/pull/7) ships: the shared cache leaves out
+the per-loader copies of the client jar (3.0 GB), installer jars (0.5 GB) and Forge's `-slim` jars (0.5 GB), all of
+which Verity rebuilds in seconds.
+
+| Run | Kind | Whole run | Prepare jobs (slowest), Linux / Windows | Runners, Linux + Windows | Slowest / median test job, Linux | Windows | Caches |
+|---|---|---|---|---|---|---|---|
+| V [42413640566](https://github.com/prometheusreengineering/verity/actions/runs/42413640566) | cold | **14.4** | 5 (5.3) / 5 (6.8) | 7 + 12 | 6.0 / 5.0 | 5.3 / 4.1 | 9.91 GB |
+| V [42414861386](https://github.com/prometheusreengineering/verity/actions/runs/42414861386) | warm | **6.9** | none | 9 + 11 | 5.4 / 3.6 | 5.5 / 3.6 | 9.91 GB |
+| V [42415473305](https://github.com/prometheusreengineering/verity/actions/runs/42415473305) | warm | **7.0** | none | 7 + 11 | 5.3 / 4.6 | 5.6 / 4.1 | 9.91 GB |
+
+The plan split the targets into 5 groups of whole Minecraft versions (shared caches of 1.0–2.8 GB) and used 18–20
+runners. Warm, no prepare job ran, since every group's cache was there. Build took 1.0–1.2 minutes and the plan job
+0.3. Runner minutes for the test jobs were 31–34 on Linux and 43–48 on Windows, less than the fixed 10 + 10 layout
+(48 + 68).
+
+### Before the smaller shared cache
+
+The same planner with the full shared cache. Cold runs were already much faster, but the caches came to 12–22 GB
+together with other branches' CI, GitHub evicted some between runs, and "warm" runs had to prepare again.
+
+| Run | OSes | Kind | Whole run | Prepare jobs (slowest) | Runners | Notes |
+|---|---|---|---|---|---|---|
+| V [42404353279](https://github.com/prometheusreengineering/verity/actions/runs/42404353279) | both | cold | **16.3** | 10 (6.3 L / 8.6 W) | 7 + 12 | 7.74 GB of caches |
+| V [42405843204](https://github.com/prometheusreengineering/verity/actions/runs/42405843204) | both | warm | 16.2 | 8 (3.2) | 8 + 10 | 13 GB, so caches were evicted |
+| V [42407213316](https://github.com/prometheusreengineering/verity/actions/runs/42407213316) | both | warm | 19.9 | 4 (10.2) | 7 + 12 | 22 GB, evicted |
+| V [42408849877](https://github.com/prometheusreengineering/verity/actions/runs/42408849877) | Linux | cold | **10.6** | 5 (5.3) | 12 | |
+| V [42410860192](https://github.com/prometheusreengineering/verity/actions/runs/42410860192) | Linux | cold | **11.9** | 4 (6.2) | 11 | |
+| V [42409827160](https://github.com/prometheusreengineering/verity/actions/runs/42409827160) | Linux | warm | 11.6 | 2 (5.3) | 10 | the group layout changed, so 2 groups were new |
+| V [42411868011](https://github.com/prometheusreengineering/verity/actions/runs/42411868011) | Linux | warm | 20.9 | 1 (13.7) | 10 | over the budget, the plan fell back to one group |
+
+For comparison, the fixed layout took 15.1–18.5 minutes cold on Linux ×20.
 
 ## The 127-target benchmark (2026-11-07)
 
@@ -92,7 +136,7 @@ These failed in every run, on both OSes:
 
 | Target | Error | Cause |
 |---|---|---|
-| `1.20.3-forge` (Forge 49.0.2) | `Library directory: libraries does not exist. Set it via the libraryDirectory system property.` | This early Forge build needs `-DlibraryDirectory`, which Verity doesn't pass. A Verity gap. |
+| `1.20.3-forge` (Forge 49.0.2) | `Library directory: libraries does not exist. Set it via the libraryDirectory system property.` | This early Forge build needs `-DlibraryDirectory`, which Verity didn't pass. Fixed in [#6](https://github.com/prometheusreengineering/verity/pull/6). |
 | `1.16.1-forge` (Forge 32.0.108) | `NullPointerException` in `ResourcePackLoader.getPackNames` | Most likely a bug in that Forge build, triggered by the sample mod. Not investigated further. |
 
 Occasional failures:
@@ -100,8 +144,10 @@ Occasional failures:
 - **An installer race on cold prepares.** `1.20.1-neoforge` and `1.20.1-forge` both write the same
   `mcp_config`/`client` mappings files, and installing them at once can fail with `Could not delete output file`,
   `FileAlreadyExistsException` or `Processor … produced unexpected outputs`. It broke 4 of the 9 cold prepares,
-  on both OSes, and also hit `1.14.3-forge` in shard jobs installing on their own. Verity locks each install but not the
-  library files that installers share.
+  on both OSes, and also hit `1.14.3-forge` in shard jobs installing on their own. Verity locked each install but not the
+  library files that installers share. Fixed in [#6](https://github.com/prometheusreengineering/verity/pull/6): the
+  processors of one Minecraft version run one install at a time, and clients wait until every install of their version
+  is done. (`1.14.3-forge` was a separate bug: its processors need vanilla's realms jar, now downloaded first.)
 - `1.20.4-forge` crashed once on Windows (`RuntimeException: java.util.concurrent…`) and passed in every other run.
 
 ## Parallel clients per runner (2026-11-07)

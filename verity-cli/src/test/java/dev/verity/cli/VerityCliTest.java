@@ -61,6 +61,32 @@ class VerityCliTest {
         assertThat(badRun.code()).isEqualTo(VerityCli.CONFIG_ERROR);
         assertThat(badRun.err()).contains("Invalid shard");
 
+        Result matrix = run("matrix", "demo", "--os", "linux,windows", "--max-runners", "4", "--week", "2026-W45",
+                "--profile-hash", "h");
+        assertThat(matrix.code()).as(matrix.err()).isZero();
+        com.fasterxml.jackson.databind.JsonNode m = dev.verity.core.util.Json.tree(matrix.out());
+        for (String os : java.util.List.of("Linux", "Windows")) {
+            java.util.List<String> ran = new java.util.ArrayList<>();
+            m.path("shards").path("include").forEach(j -> {
+                if (j.path("os").asText().equals(os)) ran.addAll(java.util.List.of(j.path("targets").asText().split(",")));
+            });
+            assertThat(ran).containsExactlyInAnyOrder("1.20.1-fabric", "1.8.9-forge");
+        }
+        assertThat(m.path("hasPrepare").asBoolean()).isTrue();
+        // Once every cache exists there's nothing to prepare.
+        StringBuilder caches = new StringBuilder();
+        m.path("prepare").path("include").forEach(j -> caches
+                .append("{\"key\":\"verity-shared-").append(j.path("key").asText()).append("-2026-W45\",\"size_in_bytes\":1}\n")
+                .append("{\"key\":\"verity-").append(j.path("os").asText()).append('-').append(j.path("key").asText())
+                .append("-2026-W45\",\"size_in_bytes\":1}\n"));
+        Path cacheList = tmp.resolve("caches.jsonl");
+        Files.writeString(cacheList, caches);
+        Result warm = run("matrix", "demo", "--os", "linux,windows", "--max-runners", "4", "--week", "2026-W45",
+                "--profile-hash", "h", "--caches", cacheList.toString());
+        assertThat(warm.code()).as(warm.err()).isZero();
+        assertThat(dev.verity.core.util.Json.tree(warm.out()).path("hasPrepare").asBoolean()).isFalse();
+        assertThat(run("matrix", "demo", "--os", "mac").code()).isEqualTo(VerityCli.CONFIG_ERROR);
+
         Path exported = tmp.resolve("exported.json");
         assertThat(run("profile", "export", "demo", exported.toString()).code()).isZero();
         assertThat(exported).exists();

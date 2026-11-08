@@ -13,8 +13,28 @@ inputs:
     description: >-
       "run" tests the targets. "prepare" installs everything the whole profile needs without launching and saves it
       as the cache; run it in one job per OS before a matrix that uses "only", because those jobs don't save a cache.
+      "plan" decides how to split the profile across runners and outputs the "prepare" and "shards" matrices; pass
+      each entry back as "job" (see the README's "Fastest CI").
     required: false
     default: run
+  job:
+    description: >-
+      One entry of a matrix that plan mode made, as toJSON(matrix). It sets the mode, the targets, the clients and the
+      caches, so a job needs only this and "profile".
+    required: false
+    default: ""
+  os:
+    description: Plan mode. The OSes to test, "linux", "windows" or "linux,windows".
+    required: false
+    default: linux
+  max-runners:
+    description: Plan mode. The most runners to use for testing, across all OSes.
+    required: false
+    default: "20"
+  knee-seconds:
+    description: Plan mode. Only add a runner if it saves at least this many seconds.
+    required: false
+    default: "15"
   only:
     description: Comma separated target filters (e.g. "1.20.1-fabric,1.8.9"). Ignored when mode is "prepare".
     required: false
@@ -66,6 +86,15 @@ outputs:
   report-dir:
     description: Absolute path of the report directory.
     value: ${{ steps.run.outputs.report-dir }}
+  prepare:
+    description: Plan mode. Matrix of prepare jobs, for strategy.matrix with fromJSON.
+    value: ${{ steps.plan.outputs.prepare }}
+  shards:
+    description: Plan mode. Matrix of test jobs, for strategy.matrix with fromJSON.
+    value: ${{ steps.plan.outputs.shards }}
+  has-prepare:
+    description: Plan mode. "true" when some caches are missing and the prepare matrix has jobs.
+    value: ${{ steps.plan.outputs.has-prepare }}
 
 # Two caches per job: one shared by every OS and one for this OS, which together hold the whole Verity home except what
 # each run creates. They stay unchanged until the key rolls over, and the restore keys let a new one start from last
@@ -85,9 +114,21 @@ runs:
       env:
         MODE: ${{ inputs.mode }}
         PROFILE: ${{ inputs.profile }}
+        JOB: ${{ inputs.job }}
+        PARALLEL: ${{ inputs.parallel }}
       run: |
-        if [ "$MODE" != run ] && [ "$MODE" != prepare ]; then
-          echo "::error::Unknown mode '$MODE' (expected run or prepare)."
+        targets=
+        name=
+        if [ -n "$JOB" ]; then
+          # A planned job: its own targets and its cache group's caches.
+          MODE="$(jq -r '.mode' <<< "$JOB")"
+          targets="$(jq -r '.targets' <<< "$JOB")"
+          name="$(jq -r '.name' <<< "$JOB")"
+          key="$(jq -r '.key' <<< "$JOB")"
+          [ -n "$PARALLEL" ] || PARALLEL="$(jq -r '.parallel // empty' <<< "$JOB")"
+        fi
+        if [ "$MODE" != run ] && [ "$MODE" != prepare ] && [ "$MODE" != plan ]; then
+          echo "::error::Unknown mode '$MODE' (expected run, prepare or plan)."
           exit 1
         fi
         # Not hashFiles: Windows checks files out with CRLF, which would give each OS its own shared cache. A missing
@@ -96,16 +137,24 @@ runs:
         if [ -f "$PROFILE" ]; then HASH="$(tr -d '\r' < "$PROFILE" | sha256sum | cut -d' ' -f1)"; fi
         # Selectors pick up new Minecraft releases without the profile changing, so the caches also roll over weekly.
         week="$(date -u +%G-W%V)"
+        # A planned job's key already covers the profile, and names its group of targets.
+        cache="${key:-$HASH}"
         {
-          echo "shared=verity-shared-$HASH-$week"
-          echo "os=verity-$RUNNER_OS-$HASH-$week"
-          echo "hash=$HASH"
+          echo "mode=$MODE"
+          echo "targets=$targets"
+          echo "name=$name"
+          echo "parallel=$PARALLEL"
+          echo "week=$week"
+          echo "shared=verity-shared-$cache-$week"
+          echo "os=verity-$RUNNER_OS-$cache-$week"
+          echo "hash=$cache"
+          echo "profile-hash=$HASH"
         } >> "$GITHUB_OUTPUT"
 
     # A prepare job with nothing to do shouldn't download gigabytes to find that out.
     - name: Look for the shared cache
       id: lookup-shared
-      if: inputs.cache == 'true' && inputs.mode == 'prepare'
+      if: inputs.cache == 'true' && steps.key.outputs.mode == 'prepare'
       uses: actions/cache/restore@v4
       with:
         lookup-only: true
@@ -132,7 +181,7 @@ runs:
 
     - name: Look for the OS cache
       id: lookup-os
-      if: inputs.cache == 'true' && inputs.mode == 'prepare'
+      if: inputs.cache == 'true' && steps.key.outputs.mode == 'prepare'
       uses: actions/cache/restore@v4
       with:
         lookup-only: true
@@ -157,7 +206,9 @@ runs:
 
     # Scanning every file the cache restore writes (tens of thousands of assets) is most of a Windows restore.
     - name: Turn off Defender's real-time scanning
-      if: runner.os == 'Windows' && inputs.defender == 'off' && steps.state.outputs.skip != 'true'
+      if: >-
+        runner.os == 'Windows' && inputs.defender == 'off' && steps.state.outputs.skip != 'true'
+        && steps.key.outputs.mode != 'plan'
       shell: pwsh
       run: |
         try {
@@ -169,7 +220,7 @@ runs:
 
     - name: Restore the shared cache
       id: restore-shared
-      if: inputs.cache == 'true' && steps.state.outputs.skip != 'true'
+      if: inputs.cache == 'true' && steps.state.outputs.skip != 'true' && steps.key.outputs.mode != 'plan'
       uses: actions/cache/restore@v4
       with:
         enableCrossOsArchive: true
@@ -197,7 +248,7 @@ runs:
 
     - name: Restore the OS cache
       id: restore-os
-      if: inputs.cache == 'true' && steps.state.outputs.skip != 'true'
+      if: inputs.cache == 'true' && steps.state.outputs.skip != 'true' && steps.key.outputs.mode != 'plan'
       uses: actions/cache/restore@v4
       with:
         key: ${{ steps.key.outputs.os }}
@@ -219,10 +270,10 @@ runs:
     # Prepare only collects the packages, for the test jobs to install. The cached packages are for this runner image,
     # which changes over time, so anything they can't install falls back to apt.
     - name: Install virtual display and software OpenGL (Linux)
-      if: runner.os == 'Linux' && steps.state.outputs.skip != 'true'
+      if: runner.os == 'Linux' && steps.state.outputs.skip != 'true' && steps.key.outputs.mode != 'plan'
       shell: bash
       env:
-        MODE: ${{ inputs.mode }}
+        MODE: ${{ steps.key.outputs.mode }}
       run: |
         pkgs="xvfb x11-xserver-utils libgl1-mesa-dri libglx-mesa0 mesa-utils"
         dir="$PWD/.verity-home/apt"
@@ -270,18 +321,72 @@ runs:
         fi
         echo "path=$dest" >> "$GITHUB_OUTPUT"
 
+    # Learns from the last finished run of this workflow (its timing artifacts) and checks which caches exist, then
+    # plans. Both are optional: without "actions: read" it plans from built-in timings, as if nothing were cached.
+    - name: Plan the run
+      id: plan
+      if: steps.key.outputs.mode == 'plan'
+      shell: bash
+      env:
+        VERITY_HOME: ${{ runner.temp }}/verity-plan-home
+        GH_TOKEN: ${{ github.token }}
+        PROFILE: ${{ inputs.profile }}
+        OSES: ${{ inputs.os }}
+        MAX_RUNNERS: ${{ inputs.max-runners }}
+        KNEE: ${{ inputs.knee-seconds }}
+        ONLY: ${{ inputs.only }}
+        EXTRA: ${{ inputs.args }}
+        JAR: ${{ steps.jar.outputs.path }}
+        WEEK: ${{ steps.key.outputs.week }}
+        PROFILE_HASH: ${{ steps.key.outputs.profile-hash }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      run: |
+        dir="$RUNNER_TEMP/verity-plan"
+        mkdir -p "$dir/history"
+        workflow="${GITHUB_WORKFLOW_REF%@*}"
+        workflow="${workflow##*/}"
+        for branch in "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" "$DEFAULT_BRANCH"; do
+          [ -n "$branch" ] || continue
+          id="$(gh run list -R "$GITHUB_REPOSITORY" --workflow "$workflow" --branch "$branch" --status completed --limit 10 \
+            --json databaseId --jq "[.[] | select(.databaseId != $GITHUB_RUN_ID)][0].databaseId // empty" 2>/dev/null || true)"
+          if [ -n "$id" ] && gh run download "$id" -R "$GITHUB_REPOSITORY" -p 'verity-timing-*' -D "$dir/history" > /dev/null 2>&1; then
+            echo "Learning run times from run $id on $branch."
+            break
+          fi
+        done
+        : > "$dir/caches.jsonl"
+        for ref in "$GITHUB_REF" "refs/heads/$DEFAULT_BRANCH"; do
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?per_page=100&key=verity-&ref=$ref" \
+            --jq '.actions_caches[] | {key, size_in_bytes}' >> "$dir/caches.jsonl" 2>/dev/null \
+            || echo "::warning::Couldn't list the caches (needs actions: read); planning as if none exist."
+        done
+        args=(matrix "$PROFILE" --os "$OSES" --max-runners "$MAX_RUNNERS" --knee-seconds "$KNEE" --week "$WEEK"
+          --profile-hash "$PROFILE_HASH" --history "$dir/history" --caches "$dir/caches.jsonl")
+        [ -n "$ONLY" ] && args+=(--only "$ONLY")
+        # shellcheck disable=SC2086
+        java -jar "$JAR" "${args[@]}" $EXTRA > "$dir/plan.json"
+        {
+          echo "prepare=$(jq -c '.prepare' "$dir/plan.json")"
+          echo "shards=$(jq -c '.shards' "$dir/plan.json")"
+          echo "has-prepare=$(jq -r '.hasPrepare' "$dir/plan.json")"
+        } >> "$GITHUB_OUTPUT"
+        jq -r '.summary' "$dir/plan.json" >> "$GITHUB_STEP_SUMMARY"
+        jq -r '.summary' "$dir/plan.json"
+
     - name: Run Verity
       id: run
-      if: steps.state.outputs.skip != 'true'
+      if: steps.state.outputs.skip != 'true' && steps.key.outputs.mode != 'plan'
       shell: bash
       env:
         VERITY_HOME: ${{ github.workspace }}/.verity-home
         GITHUB_TOKEN: ${{ github.token }}
-        MODE: ${{ inputs.mode }}
+        MODE: ${{ steps.key.outputs.mode }}
         PROFILE: ${{ inputs.profile }}
         ONLY: ${{ inputs.only }}
         SHARD: ${{ inputs.shard }}
-        PARALLEL: ${{ inputs.parallel }}
+        TARGETS: ${{ steps.key.outputs.targets }}
+        NAME: ${{ steps.key.outputs.name }}
+        PARALLEL: ${{ steps.key.outputs.parallel }}
         REPORT_DIR: ${{ inputs.report-dir }}
         EXTRA: ${{ inputs.args }}
         JAR: ${{ steps.jar.outputs.path }}
@@ -291,12 +396,23 @@ runs:
         if [ "$RUNNER_OS" = "Windows" ]; then report="$(cygpath -w "$report")"; fi
         echo "report-dir=$report" >> "$GITHUB_OUTPUT"
         args=("$MODE" "$PROFILE" --report-dir "$report")
-        [ -n "$ONLY" ] && [ "$MODE" = run ] && args+=(--only "$ONLY")
-        if [ -n "$SHARD" ] && [ "$MODE" = run ]; then
-          args+=(--shard "$SHARD")
-          # An artifact name can't contain a slash.
-          echo "shard-name=-shard-${SHARD//\//-of-}" >> "$GITHUB_OUTPUT"
+        artifact="$RUNNER_OS"
+        if [ -n "$TARGETS" ]; then
+          # A planned job (prepare installs just its group, too).
+          args+=(--only "$TARGETS")
+          artifact="$NAME"
+        else
+          if [ -n "$ONLY" ] && [ "$MODE" = run ]; then
+            args+=(--only "$ONLY")
+            artifact="$artifact-$ONLY"
+          fi
+          if [ -n "$SHARD" ] && [ "$MODE" = run ]; then
+            args+=(--shard "$SHARD")
+            # An artifact name can't contain a slash.
+            artifact="$artifact-shard-${SHARD//\//-of-}"
+          fi
         fi
+        echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
         [ -n "$PARALLEL" ] && args+=(--parallel "$PARALLEL")
         set +e
         # shellcheck disable=SC2086
@@ -324,8 +440,8 @@ runs:
       id: save
       if: >-
         inputs.cache == 'true' && steps.run.outcome == 'success'
-        && (steps.run.outputs.exit-code == '0' || (inputs.mode == 'run' && steps.run.outputs.exit-code == '1'))
-        && (inputs.mode == 'prepare' || (inputs.only == '' && inputs.shard == ''))
+        && (steps.run.outputs.exit-code == '0' || (steps.key.outputs.mode == 'run' && steps.run.outputs.exit-code == '1'))
+        && (steps.key.outputs.mode == 'prepare' || (inputs.only == '' && inputs.shard == '' && steps.key.outputs.targets == ''))
       shell: bash
       run: |
         missed="$(find .verity-home/libraries -type f ! -name '*natives-*' ! -name '*.jar' ! -name '*.zip' ! -name '*.txt' \
@@ -377,9 +493,19 @@ runs:
       if: always() && steps.run.outcome != 'skipped'
       uses: actions/upload-artifact@v4
       with:
-        name: verity-${{ inputs.mode == 'prepare' && 'prepare' || 'report' }}-${{ runner.os }}${{ inputs.mode == 'run' && inputs.only != '' && format('-{0}', inputs.only) || '' }}${{ steps.run.outputs.shard-name }}
+        name: verity-${{ steps.key.outputs.mode == 'prepare' && 'prepare' || 'report' }}-${{ steps.run.outputs.artifact }}
         path: ${{ steps.run.outputs.report-dir }}
         if-no-files-found: warn
+
+    # Just the report, small enough for a later plan to download: it learns this project's run times from it.
+    - name: Upload timings
+      if: always() && steps.run.outcome != 'skipped' && steps.key.outputs.mode == 'run'
+      uses: actions/upload-artifact@v4
+      with:
+        name: verity-timing-${{ steps.run.outputs.artifact }}
+        path: ${{ steps.run.outputs.report-dir }}/report.json
+        retention-days: 30
+        if-no-files-found: ignore
 
     - name: Fail on test failures
       if: steps.run.outcome != 'skipped' && steps.run.outputs.exit-code != '0'
