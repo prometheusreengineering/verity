@@ -30,7 +30,7 @@ The 127 targets from [the benchmark below](#the-127-target-benchmark-2026-11-07)
 test jobs from the README's "Fastest CI" example (`max-runners: 20`, default knee). The plan job chose the runners,
 the OS split, the cache groups and the shards itself, learning from the previous run's timings. All runs include the
 installer race fix, `-DlibraryDirectory` and Defender off. Every target ran exactly once, and every run passed 126
-of 127: only `1.16.1-forge` failed, as [before](#failures).
+of 127: only `1.16.1-forge` failed, as [before](#failures) (since fixed in the sample mod).
 
 ### Both OSes, with the smaller shared cache
 
@@ -137,7 +137,7 @@ These failed in every run, on both OSes:
 | Target | Error | Cause |
 |---|---|---|
 | `1.20.3-forge` (Forge 49.0.2) | `Library directory: libraries does not exist. Set it via the libraryDirectory system property.` | This early Forge build needs `-DlibraryDirectory`, which Verity didn't pass. Fixed in [#6](https://github.com/prometheusreengineering/verity/pull/6). |
-| `1.16.1-forge` (Forge 32.0.108) | `NullPointerException` in `ResourcePackLoader.getPackNames` | Most likely a bug in that Forge build, triggered by the sample mod. Not investigated further. |
+| `1.16.1-forge` (Forge 32.0.108) | `NullPointerException` in `ResourcePackLoader.getPackNames` | The sample mod had no `pack.mcmeta`. Vanilla returns no pack info for it, and this Forge build calls `getPackInfo()` on it anyway; later builds handle that. Fixed by adding `pack.mcmeta` to the sample mod. |
 
 Occasional failures:
 
