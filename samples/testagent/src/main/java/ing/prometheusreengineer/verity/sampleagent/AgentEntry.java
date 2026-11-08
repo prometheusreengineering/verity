@@ -25,17 +25,18 @@ public final class AgentEntry {
         if (!Verity.isActive()) return;
         System.setProperty(PROP_AGENT, "true");
         Verity.pass("agent loaded");
+        final Instrumentation instrumentation = inst;
         Thread t = new Thread(new Runnable() {
             @Override
             public void run() {
-                watch();
+                watch(instrumentation);
             }
         }, "verity-sample-agent");
         t.setDaemon(true);
         t.start();
     }
 
-    static void watch() {
+    static void watch(Instrumentation inst) {
         long start = System.currentTimeMillis();
         long deadline = start + Integer.getInteger("verity.sample.menuTimeout", 280) * 1000L;
         boolean trace = Boolean.getBoolean("verity.sample.trace");
@@ -53,9 +54,15 @@ public final class AgentEntry {
                     + (watcher.usesLoopRule() ? " or the game loop" : ""));
         }
 
-        // Stack walks pause the thread they walk, so keep them rare: Windows clients crashed natively (no hs_err)
-        // during early startup while this sampled every 50 ms and walked every thread until it found the right one.
-        long interval = Integer.getInteger("verity.sample.interval", 250);
+        // No stack walks until the game starts on its window: Windows clients sometimes crashed natively (0xC0000005,
+        // no hs_err) in early startup (class loading, the datafixer) while this walked the main thread's stack. Listing
+        // the loaded classes walks no stack. The window comes before the menu, and before 1.14 early in startGame().
+        while (!graphicsLoaded(inst) && System.currentTimeMillis() < deadline) sleep(500);
+        if (trace) Verity.log(String.format("%.1fs graphics classes loaded, sampling", (System.currentTimeMillis() - start) / 1000.0));
+
+        // The title screen's render() can be a sliver of each frame (1.21.6+ only records what to draw there), so
+        // sample often once it matters.
+        long interval = Integer.getInteger("verity.sample.interval", 50);
         Thread render = null;
         long lastSearch = 0;
         String found = null;
@@ -103,6 +110,18 @@ public final class AgentEntry {
             else Verity.fail("mod loaded", "The game reached its main menu but the sample mod never started.");
         }
         Verity.finish();
+    }
+
+    /** LWJGL's windowing or graphics bindings: OpenGL (LWJGL 2 and 3), GLFW, SDL (26.3+) or Vulkan (26.x). */
+    static boolean graphicsLoaded(Instrumentation inst) {
+        for (Class<?> c : inst.getAllLoadedClasses()) {
+            String n = c.getName();
+            if (n.startsWith("org.lwjgl.") && (n.startsWith("org.lwjgl.opengl.") || n.startsWith("org.lwjgl.glfw.")
+                    || n.startsWith("org.lwjgl.sdl.") || n.startsWith("org.lwjgl.vulkan."))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Names Minecraft gives the thread that runs {@code Main.main}: the JVM's, then 1.7.10-1.13's and 1.14+'s. */
