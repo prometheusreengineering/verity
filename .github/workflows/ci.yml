@@ -34,7 +34,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
       - name: Build
-        run: ./gradlew build :verity-cli:shadowJar :verity-app:shadowJar :samples:testmod:shadowJar --stacktrace
+        run: ./gradlew build :verity-cli:shadowJar :samples:testmod:shadowJar --stacktrace
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4
@@ -47,7 +47,6 @@ jobs:
           name: jars-${{ matrix.os }}
           path: |
             verity-cli/build/libs/verity-cli-*.jar
-            verity-app/build/libs/verity-*.jar
             samples/testmod/build/libs/verity-testmod-*.jar
 
   e2e:
