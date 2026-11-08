@@ -54,9 +54,9 @@ public final class AgentEntry {
                     + (watcher.usesLoopRule() ? " or the game loop" : ""));
         }
 
-        // No stack walks until the game starts on its window: Windows clients sometimes crashed natively (0xC0000005,
-        // no hs_err) in early startup (class loading, the datafixer) while this walked the main thread's stack. Listing
-        // the loaded classes walks no stack. The window comes before the menu, and before 1.14 early in startGame().
+        // Nothing to look for before the game loads its graphics, so don't walk stacks during early startup (listing
+        // loaded classes walks none). The window comes before the menu, and before 1.14 early in startGame(). The rare
+        // native crashes Windows clients have in early startup (0xC0000005, no hs_err) happen without the agent too.
         while (!graphicsLoaded(inst) && System.currentTimeMillis() < deadline) sleep(500);
         if (trace) Verity.log(String.format("%.1fs graphics classes loaded, sampling", (System.currentTimeMillis() - start) / 1000.0));
 
