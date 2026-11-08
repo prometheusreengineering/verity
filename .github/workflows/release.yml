@@ -89,18 +89,28 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           pattern: dist-*
           merge-multiple: true
           path: dist
+      # A fix for an older major (v1.4.1 after v2.0.0) must not become the latest release, which is what the action
+      # runs from a branch or commit.
+      - name: Check whether this is the newest release
+        id: latest
+        run: |
+          newest="$(git tag --list 'v*.*.*' | grep -v -- - | sort -V | tail -n 1)"
+          echo "make=$([ "$newest" = "$GITHUB_REF_NAME" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ steps.latest.outputs.make }}
       # Actions users pin @v1; the action then runs the newest v1.x.y CLI. Pre-releases (v1.1.0-rc1) don't move it.
-      - uses: actions/checkout@v4
-        if: ${{ !contains(github.ref_name, '-') }}
       - name: Move the major tag
         if: ${{ !contains(github.ref_name, '-') }}
         run: |

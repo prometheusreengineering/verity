@@ -27,7 +27,8 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
   `prometheusreengineering/maven` (needs the `MAVEN_REPO_DEPLOY_KEY` secret) and GitHub Packages, creates the
   GitHub release that `action.yml` downloads from, then moves the major tag (`v1`) to it unless it's a pre-release.
   The action runs the CLI of the ref it was used at (`@v1.0.0` exactly, `@v1` the newest 1.x.y, else latest), read
-  from `github.action_path`, so a pinned action never runs a CLI from a later, incompatible release.
+  from `github.action_path`, so a pinned action never runs a CLI from a later, incompatible release. How to pick
+  and cut major/minor/patch releases: `docs/releasing.md`.
 - `action.yml` caches: one shared across OSes plus one per OS, keyed by a line-ending-free profile hash (`hashFiles` sees
   CRLF on Windows) and the week. Keep the cache's `path` lists identical everywhere, as they're part of its identity. A
   matched directory goes to tar whole, ignoring exclusions in it, so libraries are matched by file type. The installer

@@ -325,7 +325,7 @@ runs:
           # The ref the action was used at is the last part of its path (github.action_ref is often empty in
           # composite actions). A CLI from another release may not match this action.yml.
           ref="$(basename "$(printf '%s' "$ACTION_PATH" | tr '\\\\' '/')")"
-          if [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
             version="$ref"
           elif [[ "$ref" =~ ^v[0-9]+(\.[0-9]+)?$ ]]; then
             # A moving major (or minor) tag: the newest release under it.
