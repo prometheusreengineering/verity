@@ -314,6 +314,50 @@ class RunOrchestratorTest {
     }
 
     @Test
+    void aNativeCrashWithoutACrashReportIsRetriedOnce() throws Exception {
+        VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
+        Profile p = fakeProfile(home, "fake-flaky", "fake-crash");
+        p.test.vanillaSmokeSec = 0;
+        p.jvm.args.add("-Dfake.marker=" + tmp.resolve("crashed-once"));
+        RunOptions opts = new RunOptions();
+        opts.displayProvider = NO_DISPLAY;
+        opts.reportDir = tmp.resolve("report");
+        RunReport report = new RunOrchestrator(context(home)).start(p, opts, new RunListener() {
+        }).report().get(120, TimeUnit.SECONDS);
+        Map<String, TargetResult> byId = new HashMap<>();
+        report.results.forEach(r -> byId.put(r.id, r));
+
+        TargetResult flaky = byId.get("fake-flaky-vanilla");
+        assertThat(flaky.status).as(flaky.message).isEqualTo(Status.PASSED);
+        assertThat(flaky.retriedAfter).contains("Game exited with code");
+        assertThat(flaky.message).contains("passed on retry");
+        assertThat(flaky.checks).extracting(CheckResult::name).containsExactly("loaded");
+        assertThat(flaky.exitCode).isNotEqualTo(0xC0000005).isNotEqualTo(139);
+        assertThat(Path.of(report.runDir).resolve("targets/fake-flaky-vanilla/attempt-1/output.log")).exists();
+
+        // Minecraft wrote a crash report: a real crash, not retried.
+        TargetResult crash = byId.get("fake-crash-vanilla");
+        assertThat(crash.status).isEqualTo(Status.CRASHED);
+        assertThat(crash.retriedAfter).isNull();
+    }
+
+    @Test
+    void nativeFaultsAreExceptionCodesSignalsOrJvmLogsWithoutACrashReport() {
+        Path hsErr = Path.of("hs_err_pid42.log");
+        Path report = Path.of("crash-2026-01-01_00.00.00-client.txt");
+        assertThat(ClientSession.nativeFault(0xC0000005, List.of())).isTrue();   // Windows access violation
+        assertThat(ClientSession.nativeFault(0xC0000374, List.of())).isTrue();   // heap corruption
+        assertThat(ClientSession.nativeFault(139, List.of())).isTrue();          // SIGSEGV
+        assertThat(ClientSession.nativeFault(134, List.of(hsErr))).isTrue();     // JVM fatal error
+        assertThat(ClientSession.nativeFault(-1, List.of(report))).isFalse();    // Minecraft crashed and said why
+        assertThat(ClientSession.nativeFault(-1, List.of())).isFalse();          // System.exit(-1)
+        assertThat(ClientSession.nativeFault(1, List.of())).isFalse();
+        assertThat(ClientSession.nativeFault(143, List.of())).isFalse();         // stopped by Verity (SIGTERM)
+        assertThat(ClientSession.nativeFault(0xC0000005, List.of(report))).isFalse();
+        assertThat(ClientSession.nativeFault(null, List.of())).isFalse();
+    }
+
+    @Test
     void aClientWithoutAnyGraphicsBackendCrashesInsteadOfPassingOrTimingOut() throws Exception {
         VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
         Profile p = fakeProfile(home, "fake-nobackend");

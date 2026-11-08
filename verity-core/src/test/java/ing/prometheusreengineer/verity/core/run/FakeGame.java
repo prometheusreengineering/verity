@@ -49,6 +49,18 @@ public class FakeGame {
                 Files.writeString(crash, "---- Minecraft Crash Report ----\n\nDescription: Initializing game\n\njava.lang.NoSuchMethodError: foo\n");
                 System.exit(-1);
             }
+            case "fake-flaky" -> {
+                // Dies of a native fault the first time (per marker file), like a rare runner crash; passes after.
+                Path marker = Path.of(System.getProperty("fake.marker"));
+                if (!Files.exists(marker)) {
+                    Files.writeString(marker, "crashed once");
+                    boolean windows = System.getProperty("os.name").startsWith("Windows");
+                    Runtime.getRuntime().halt(windows ? 0xC0000005 : 139);
+                }
+                Verity.pass("loaded");
+                Verity.finish();
+                Thread.sleep(60_000);
+            }
             case "fake-agent" -> {
                 Verity.pass("agent " + System.getProperty("fake.agent"));
                 Verity.finish();

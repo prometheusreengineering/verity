@@ -74,7 +74,11 @@ public final class ClientSession {
     /** Mesa was wanted but failed to install, so the client runs on the real GPU driver. */
     private volatile boolean mesaFallback;
     private final Deque<String> tail = new ArrayDeque<>();
-    private final CompletableFuture<String> outcome = new CompletableFuture<>();
+    /** How the current attempt ended; a retry gets a new one. */
+    private volatile CompletableFuture<String> outcome = new CompletableFuture<>();
+    private volatile boolean cancelled;
+    /** Crash reports and JVM error logs the current attempt left. */
+    private volatile List<Path> crashes = List.of();
     private final AtomicBoolean connected = new AtomicBoolean();
     /** Minecraft 26.3+ graphics backends that failed to start, from the game log. */
     private final java.util.Set<String> failedBackends = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -121,6 +125,7 @@ public final class ClientSession {
 
     /** Requests cancellation; the session stops its client and reports CANCELLED. */
     public void cancel() {
+        cancelled = true;
         outcome.complete("cancel");
     }
 
@@ -193,7 +198,22 @@ public final class ClientSession {
             launchPermits.acquire();
             try {
                 if (outcome.isDone()) return finish(Status.CANCELLED, "Cancelled", start);
-                return launchAndSupervise(version, java, start);
+                Attempt a = launchAndSupervise(version, java);
+                if (a.status() == Status.CRASHED && profile.test.retryNativeCrashes && !cancelled
+                        && nativeFault(result.exitCode, crashes)) {
+                    // Rare native faults on CI runners (Windows access violations, a SIGBUS loading a native library)
+                    // that don't come back: run it once more rather than fail on them. A real bug crashes twice.
+                    String first = a.message();
+                    startNextAttempt();
+                    listener.targetLog(target, "[verity] Native crash without a Minecraft crash report (" + first
+                            + "); retrying once. The first attempt's logs are in attempt-1/");
+                    a = launchAndSupervise(version, java);
+                    result.retriedAfter = first;
+                    String note = a.status() == Status.PASSED ? " (passed on retry; the first attempt crashed natively: "
+                            : " (on retry; the first attempt crashed natively: ";
+                    a = new Attempt(a.status(), a.message() + note + first + ")");
+                }
+                return finish(a.status(), a.message(), start);
             } finally {
                 launchPermits.release();
             }
@@ -218,7 +238,57 @@ public final class ClientSession {
         if (installReported.compareAndSet(false, true)) barrier.installed(target);
     }
 
-    private TargetResult launchAndSupervise(InstalledVersion version, Path java, long start) throws Exception {
+    /** How one launch ended. */
+    private record Attempt(Status status, String message) {
+    }
+
+    /**
+     * Whether a client died of a native fault rather than a Java error Minecraft reported: a JVM error log or a native
+     * exit status (a Windows exception code, or a fatal signal on Linux/macOS), and no Minecraft crash report.
+     */
+    static boolean nativeFault(Integer exit, List<Path> crashes) {
+        boolean jvmLog = false;
+        for (Path c : crashes) {
+            if (!c.getFileName().toString().startsWith("hs_err_pid")) return false;
+            jvmLog = true;
+        }
+        if (jvmLog) return true;
+        if (exit == null) return false;
+        // NTSTATUS errors: 0xC0000005 access violation, 0xC0000374 heap corruption, 0xC00000FD stack overflow...
+        if ((exit & 0xF0000000) == 0xC0000000) return true;
+        // 128 + SIGILL, SIGABRT (the JVM after a fatal error), SIGBUS, SIGFPE, SIGSEGV.
+        return exit == 132 || exit == 134 || exit == 135 || exit == 136 || exit == 139;
+    }
+
+    /** Moves the attempt's files to {@code attempt-1/} and forgets what it reported. */
+    private void startNextAttempt() throws IOException {
+        Path keep = reportDir.resolve("attempt-1");
+        Files.createDirectories(keep);
+        try (var files = Files.list(reportDir)) {
+            for (Path f : files.toList()) {
+                if (!f.getFileName().toString().startsWith("attempt-")) Files.move(f, keep.resolve(f.getFileName()));
+            }
+        }
+        checks.clear();
+        verityLog.clear();
+        synchronized (tail) {
+            tail.clear();
+        }
+        connected.set(false);
+        failedBackends.clear();
+        backendUp = false;
+        crashes = List.of();
+        result.exitCode = null;
+        result.crashReports.clear();
+        synchronized (result) {
+            result.attachments.clear();
+        }
+        CompletableFuture<String> next = new CompletableFuture<>();
+        outcome = next;
+        if (cancelled) next.complete("cancel");
+    }
+
+    private Attempt launchAndSupervise(InstalledVersion version, Path java) throws Exception {
         launchedAt = System.currentTimeMillis();
         setStatus(Status.LAUNCHING, "Preparing instance");
         Rule.Environment env = Rule.Environment.current();
@@ -352,6 +422,7 @@ public final class ClientSession {
                 hook.unregister(token);
 
                 List<Path> crashes = collectCrashReports(layout, launchedAt);
+                this.crashes = crashes;
                 if (finalStatus == null) {
                     long failed = checks.stream().filter(c -> !c.passed()).count();
                     if (!crashes.isEmpty() || (exit != null && exit != 0)) {
@@ -364,7 +435,7 @@ public final class ClientSession {
                     }
                 }
                 copyGameLog(layout);
-                return finish(finalStatus, message, start);
+                return new Attempt(finalStatus, message);
             }
         } finally {
             hook.unregister(token);

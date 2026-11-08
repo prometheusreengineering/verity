@@ -237,6 +237,12 @@ public class Profile {
          */
         public int vanillaSmokeSec = 60;
         /**
+         * Run a client once more if it dies of a native fault (an access violation, a fatal signal or a JVM error log)
+         * without a Minecraft crash report. CI runners occasionally have such crashes that don't come back; a real bug
+         * crashes again. The result records the first attempt in {@code retriedAfter}.
+         */
+        public boolean retryNativeCrashes = true;
+        /**
          * Smoke test for modded targets: a client that has not connected through verity-api passes once it has run
          * this long without crashing. 0 = modded targets must report through verity-api.
          */

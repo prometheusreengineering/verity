@@ -97,6 +97,7 @@ Profiles are JSON files. `verity profile new` and `import` store them in `<home>
 | `test.startupTimeoutSec` | The mod must connect through verity-api within this time |
 | `test.timeoutSec` | `Verity.finish()` must be called within this time |
 | `test.vanillaSmokeSec` | A vanilla client that never connects (no agent reports through verity-api) passes after running this long without crashing (0 = require the hook) |
+| `test.retryNativeCrashes` | Run a client once more if it dies of a native fault (access violation, fatal signal or JVM error log) without a Minecraft crash report (default on). CI runners rarely have such crashes; a real bug crashes again. The result's `retriedAfter` says how the first attempt ended, and its logs stay in `targets/<id>/attempt-1/` |
 | `test.smokeSec` | Modded targets pass after running this long without crashing, unless the mod reports through verity-api (0 = the mod must report) |
 | `run.onlyTargetsWithAllMods` | Skip targets where some mod entry has no file. Skipped targets don't fail the run |
 | `run.maxParallel` | Clients at once. `0` = automatic: half the CPU cores, limited by memory |
