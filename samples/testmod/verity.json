@@ -8,7 +8,7 @@
     { "path": "build/libs/verity-testmod-*.jar" },
     { "path": "../testagent/build/libs/verity-testagent-*.jar", "agent": true }
   ],
-  "jvm": { "memoryMb": 2048, "args": ["-Dverity.sample.trace=true"] },
+  "jvm": { "memoryMb": 2048 },
   "display": { "mode": "headless" },
   "test": { "startupTimeoutSec": 300, "timeoutSec": 360 }
 }

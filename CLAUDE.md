@@ -10,14 +10,14 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 ./gradlew build                        # all modules + unit tests (Java 21 toolchain)
 ./gradlew :verity-core:test --tests '*RunOrchestratorTest*'
 ./gradlew :verity-cli:shadowJar        # verity-cli/build/libs/verity-cli-<v>-all.jar (released as verity-cli.jar; used by the action)
-./gradlew :samples:testmod:shadowJar   # universal sample mod used by the e2e matrix
+./gradlew :samples:testmod:shadowJar :samples:testagent:shadowJar   # sample mod + agent used by the e2e matrices
 ```
 
 - Tests tagged `e2e` are excluded unless `-Pe2e` is passed. `XvfbDisplayTest` skips itself without Xvfb.
 - `RunOrchestratorTest` runs the whole pipeline against fake game JVMs (`FakeGame`) from a pre-seeded home, so it
   needs no network. Use that pattern for anything touching install/launch/session logic.
 - Real Minecraft is only exercised on CI, through the repo's own `action.yml` in plan mode, on Linux and Windows.
-  `ci.yml` runs `samples/testmod/verity.json` (the newest patch of every minor version per loader, ~34 targets)
+  `ci.yml` runs `samples/testmod/verity.json` (the newest patch of every minor version, vanilla and each loader)
   on every push and PR, with cached installs. `all-targets.yml` runs `samples/testmod/verity-all.json` (every
   version, ~127 targets) nightly and cold: `cache: false` and no prepare jobs, since older patches and first installs
   are where launcher bugs hide. Locally, keep `-p` at about 3; each client plus Mesa takes several GB. Cloud sandboxes usually can't reach
@@ -43,7 +43,8 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 | `verity-api` | **Java 8 (`--release 8`), zero dependencies.** Mods shade and relocate it. Never add deps or newer APIs. |
 | `verity-core` | Engine. Packages: `meta` (Mojang/Fabric/Forge/NeoForge metadata), `install` (vanilla/Fabric/Forge processors, Java runtimes), `launch` (command builder, natives, instance layout, log parsing), `display` (window, Xvfb, Win32 hidden desktop + Mesa), `mods` (jar inspection, `ModPlanner`: per-target assignment of local + Modrinth mods), `modrinth` (API client, per-target file/dependency picking), `profile`, `hook` (socket server for verity-api), `run` (orchestrator, `ClientSession` state machine, `Shard`), `ci` (`CiPlanner`/`CostModel`: runner count, OS split, shards and cache groups for `verity matrix` and the action's plan mode), `report` (JSON/JUnit/HTML), `auth`, `net`, `home`, `util` |
 | `verity-cli` | picocli. Exit codes: 0 pass, 1 test failures, 2 config error (`ProfileException`), 3 internal error |
-| `samples/testmod` | One Java 8 jar for Fabric, FML 1.7.10, Forge 1.8–1.12, Forge 1.13+, NeoForge, built against compile-only stubs in `src/stubs` |
+| `samples/testmod` | One Java 8 jar for Fabric, FML 1.7.10, Forge 1.8–1.12, Forge 1.13+, NeoForge, built against compile-only stubs in `src/stubs`. Only reports "loaded via"; with the agent attached, the agent finishes |
+| `samples/testagent` | Java 8 `-javaagent` (profile mod entry with `"agent": true`) on every target. Passes once the render thread (the one running `net.minecraft.client.main.Main.main`) shows a title-screen frame: Fabric `class_442`, Forge MCP `GuiMainMenu`/`MainMenuScreen`, Mojang `TitleScreen`, vanilla's obfuscated name from `verity.mappings` (1.14.4+) or hardcoded (1.14–1.14.3). Vanilla before 1.14 has no names: `Minecraft.run()` (a default-package method staying under `Main.main`) leaving `startGame` (1.7.10–1.12.2) or just running (1.13, which loads in the constructor). Set `-Dverity.sample.trace=true` to log the render thread |
 
 ## Conventions and gotchas
 
@@ -84,5 +85,5 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
   `@JsonIgnore` on the helper drops the field (see `ModEntry.fromModrinth()`).
 - Tests must be path-separator agnostic (Windows CI runs them): build expected paths with `Path.of(...).toString()`.
   Never put glob characters through `Path.of` (Windows rejects `*`); see `ProfileStore.absolutize`.
-- Code style: match the surrounding code (Java 21 records/switch expressions in core, Java 8 in api/testmod),
+- Code style: match the surrounding code (Java 21 records/switch expressions in core, Java 8 in api/testmod/testagent),
   sparse comments that explain why, no new dependencies without need (versions in `gradle/libs.versions.toml`).

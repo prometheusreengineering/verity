@@ -90,12 +90,13 @@ Profiles are JSON files. `verity profile new` and `import` store them in `<home>
 | `select.modrinth` | Modrinth projects: keep only the (version, loader) pairs all of them publish files for |
 | `mods[].path` / `mods[].modrinth` | A local file/folder/glob, or a Modrinth project slug/id (exactly one per entry) |
 | `mods[].match` | `auto` (use jar metadata), `always`, `never` |
+| `mods[].agent` | Attach the jar with `-javaagent` instead of putting it in the mods folder: it goes to every target its `loaders`/`minecraft` rules allow, vanilla included. Local jars only |
 | `mods[].version` / `channel` / `dependencies` | Modrinth only: pin a version, allow `beta`/`alpha` builds, install required dependencies (default on) |
 | `display.mode` | `headless` (invisible, real rendering) or `window` |
 | `display.softwareGl` | `auto`, `on`, `off`: Mesa llvmpipe instead of the GPU driver |
 | `test.startupTimeoutSec` | The mod must connect through verity-api within this time |
 | `test.timeoutSec` | `Verity.finish()` must be called within this time |
-| `test.vanillaSmokeSec` | Vanilla can't load mods, so a vanilla client passes after running this long without crashing (0 = require the hook) |
+| `test.vanillaSmokeSec` | A vanilla client that never connects (no agent reports through verity-api) passes after running this long without crashing (0 = require the hook) |
 | `test.smokeSec` | Modded targets pass after running this long without crashing, unless the mod reports through verity-api (0 = the mod must report) |
 | `run.onlyTargetsWithAllMods` | Skip targets where some mod entry has no file. Skipped targets don't fail the run |
 | `run.maxParallel` | Clients at once. `0` = automatic: half the CPU cores, limited by memory |
@@ -135,6 +136,14 @@ from a release (or run `./gradlew :verity-api:publishToMavenLocal`) and shade it
 
 `samples/testmod` is a complete universal example: one jar that loads on Fabric, legacy Forge (1.7.10–1.12.2), modern
 Forge and NeoForge without depending on any Minecraft class.
+
+**Java agents.** A mod entry with `"agent": true` is attached with `-javaagent`, so it also runs on vanilla, where no
+mod can. An agent reports through verity-api like a mod. On vanilla 1.14.4+, Verity also passes
+`-Dverity.mappings=<file>`: Mojang's client mappings (official name → obfuscated name, ProGuard format), so an agent
+can find game classes by their real names. `samples/testagent` is the example: it passes a target only once the game
+reaches its main menu, on vanilla and every loader, by sampling the render thread (the thread running
+`net.minecraft.client.main.Main.main`) until a title-screen frame shows up. Verity's own matrices run it next to the
+sample mod, and it checks that the mod loaded.
 
 ## Mods from Modrinth
 
@@ -182,10 +191,10 @@ only where it fits:
 - A jar whose metadata for the target's loader excludes the version is skipped.
 - A jar with metadata for exactly one *other* loader is skipped. A multi-loader jar is installed everywhere.
 - Jars without any metadata (plain libraries) go everywhere except vanilla.
+- Java agents (`"agent": true`) go everywhere, vanilla included, unless their rules say otherwise.
 - An entry with manual rules (`loaders`, `minecraft`) or `match: always` ignores metadata.
 
-`verity plan <profile> -v` and the **Mods** tab's preview show the decision and the reason for every jar on every
-target.
+`verity plan <profile> -v` shows the decision and the reason for every jar on every target.
 
 ## Headless mode
 
@@ -255,7 +264,7 @@ The action installs Xvfb/Mesa on Linux, caches the Minecraft/loader/Java downloa
 results table to the job summary, uploads the reports as an artifact, and fails the job if any target fails.
 On Windows it also turns off Defender's real-time scanning for the job, which otherwise scans every file the cache
 restores; set `defender: keep` on self-hosted runners. `.github/workflows/ci.yml` runs Verity's own end-to-end matrix
-with `samples/testmod`.
+with the sample agent and mod (`samples/testmod/verity.json`), and `all-targets.yml` runs every version nightly.
 
 Each profile gets two caches per job, renewed weekly: one shared by every OS (assets, versions, installers, mods,
 metadata, libraries) and one for the OS (Java runtimes, native libraries, Mesa and 7-Zip on Windows, Xvfb packages on
@@ -400,6 +409,7 @@ Each target's report folder contains `output.log` (raw stdout/stderr), `console.
 ./gradlew build                         # all modules + unit tests (incl. an end-to-end run with fake game JVMs)
 ./gradlew :verity-cli:shadowJar         # verity-cli/build/libs/verity-cli-<v>-all.jar
 ./gradlew :samples:testmod:shadowJar    # the universal sample mod
+./gradlew :samples:testagent:shadowJar  # the sample Java agent (main-menu check)
 ```
 
 | Module | Contents |
@@ -407,7 +417,8 @@ Each target's report folder contains `output.log` (raw stdout/stderr), `console.
 | `verity-api` | The Java 8 test-hook API mods use |
 | `verity-core` | Metadata, installers (vanilla/Fabric/Forge/NeoForge), Java runtimes, launching, displays, mod assignment, orchestration, reports |
 | `verity-cli` | picocli command line |
-| `samples/testmod` | Universal sample mod and Verity's own e2e profile |
+| `samples/testmod` | Universal sample mod and Verity's own e2e profiles |
+| `samples/testagent` | Sample Java agent: passes once the game reaches its main menu, on vanilla and every loader |
 
 ## Limitations
 
