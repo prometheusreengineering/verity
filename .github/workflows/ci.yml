@@ -8,12 +8,14 @@ on:
   workflow_dispatch:
     inputs:
       e2e:
-        description: Run the end-to-end Minecraft matrix
+        description: Run the Minecraft matrix (samples/testmod/verity.json)
         type: boolean
         default: true
 
 permissions:
   contents: read
+  # Plan mode reads earlier runs' timings and the cache list.
+  actions: read
 
 jobs:
   build:
@@ -49,32 +51,99 @@ jobs:
             verity-cli/build/libs/verity-cli-*.jar
             samples/testmod/build/libs/verity-testmod-*.jar
 
-  e2e:
-    name: Minecraft matrix (${{ matrix.os }})
+  # The sample mod on the newest patch of every minor version per loader (samples/testmod/verity.json, about 34
+  # targets), split across runners by Verity's plan mode. Each cache group's prepare job fills its caches once a week.
+  plan:
+    name: Plan
     needs: build
-    # Runs even if only the Windows unit-test leg failed; it uses the jars built on Linux.
     if: ${{ !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.e2e) }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    runs-on: ubuntu-latest
+    outputs:
+      prepare: ${{ steps.plan.outputs.prepare }}
+      shards: ${{ steps.plan.outputs.shards }}
+      has-prepare: ${{ steps.plan.outputs.has-prepare }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: jars-ubuntu-latest
           path: jars
-      - name: Place sample mod where the profile expects it
+      - name: Place jars
+        id: jars
         shell: bash
         run: |
           mkdir -p samples/testmod/build/libs
           cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
-          ls -R jars
-      - name: Run Verity on the sample mod
+          echo "cli=$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)" >> "$GITHUB_OUTPUT"
+      - id: plan
         uses: ./
         with:
+          mode: plan
           profile: samples/testmod/verity.json
-          jar: jars/verity-cli/build/libs/verity-cli-0.1.0-SNAPSHOT-all.jar
-          parallel: "3"
+          jar: ${{ steps.jars.outputs.cli }}
+          # Leaves runners for other workflows; the planner picks 10 for this profile anyway.
+          max-runners: "10"
+
+  prepare:
+    name: ${{ matrix.name }}
+    needs: [build, plan]
+    if: ${{ !cancelled() && needs.plan.outputs.has-prepare == 'true' }}
+    # The test jobs can still install what they need themselves.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.prepare) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jars-ubuntu-latest
+          path: jars
+      - name: Place jars
+        id: jars
+        shell: bash
+        run: |
+          mkdir -p samples/testmod/build/libs
+          cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
+          if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
+          echo "cli=$jar" >> "$GITHUB_OUTPUT"
+      - uses: ./
+        with:
+          profile: samples/testmod/verity.json
+          jar: ${{ steps.jars.outputs.cli }}
+          job: ${{ toJSON(matrix) }}
+
+  e2e:
+    name: ${{ matrix.name }}
+    needs: [build, plan, prepare]
+    # Runs after a skipped or failed prepare too, and even if only the Windows unit-test leg failed: it uses the jars
+    # built on Linux.
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.shards) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jars-ubuntu-latest
+          path: jars
+      - name: Place jars
+        id: jars
+        shell: bash
+        run: |
+          mkdir -p samples/testmod/build/libs
+          cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
+          if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
+          echo "cli=$jar" >> "$GITHUB_OUTPUT"
+      - uses: ./
+        with:
+          profile: samples/testmod/verity.json
+          jar: ${{ steps.jars.outputs.cli }}
+          job: ${{ toJSON(matrix) }}

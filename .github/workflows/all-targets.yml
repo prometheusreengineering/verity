@@ -1,0 +1,108 @@
+name: All targets
+
+# The sample mod on every Fabric, Forge and NeoForge version Verity supports (samples/testmod/verity-all.json, about
+# 127 targets), cold. Launcher bugs hide in older patches (Forge's install and launch files change between them) and
+# in first installs, which ci.yml's warm, newest-patch run doesn't reach. Nothing is cached: the caches would take most
+# of the repository's 10 GB, and without them each test job installs its own targets, so no prepare jobs run.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  pull_request:
+    paths:
+      - .github/workflows/all-targets.yml
+      - samples/testmod/verity-all.json
+  workflow_dispatch:
+    inputs:
+      only:
+        description: Only these targets (comma separated filters, e.g. "1.16.1-forge,26.3"). Empty runs all.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  # Plan mode reads earlier runs' timings.
+  actions: read
+
+concurrency:
+  group: all-targets
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build jars
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build
+        run: ./gradlew :verity-cli:shadowJar :samples:testmod:shadowJar --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: all-targets-jars
+          path: |
+            verity-cli/build/libs/verity-cli-*-all.jar
+            samples/testmod/build/libs/verity-testmod-*.jar
+          if-no-files-found: error
+
+  # The plan lists prepare jobs too, since it finds no caches; they're left out on purpose (see the top).
+  plan:
+    name: Plan
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: all-targets-jars
+          path: jars
+      - name: Place jars
+        id: jars
+        shell: bash
+        run: |
+          mkdir -p samples/testmod/build/libs
+          cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          echo "cli=$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)" >> "$GITHUB_OUTPUT"
+      - id: plan
+        uses: ./
+        with:
+          mode: plan
+          profile: samples/testmod/verity-all.json
+          jar: ${{ steps.jars.outputs.cli }}
+          only: ${{ inputs.only }}
+
+  e2e:
+    name: ${{ matrix.name }}
+    needs: [build, plan]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.shards) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: all-targets-jars
+          path: jars
+      - name: Place jars
+        id: jars
+        shell: bash
+        run: |
+          mkdir -p samples/testmod/build/libs
+          cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
+          if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
+          echo "cli=$jar" >> "$GITHUB_OUTPUT"
+      - uses: ./
+        with:
+          profile: samples/testmod/verity-all.json
+          jar: ${{ steps.jars.outputs.cli }}
+          job: ${{ toJSON(matrix) }}
+          cache: "false"

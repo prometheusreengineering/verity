@@ -1,19 +1,13 @@
 {
   "name": "verity-sample",
-  "description": "Verity's own end-to-end matrix: the universal sample mod on every loader family.",
+  "description": "Default matrix: the sample mod on the newest patch of every minor Minecraft version each loader supports.",
   "targets": [
-    { "minecraft": "1.8.9", "loader": "forge" },
-    { "minecraft": "1.12.2", "loader": "forge" },
-    { "minecraft": "1.20.1", "loader": "fabric" },
-    { "minecraft": "1.20.1", "loader": "forge" },
-    { "minecraft": "1.21.1", "loader": "neoforge" },
-    { "minecraft": "1.21.1", "loader": "fabric" },
-    { "minecraft": "latest" }
+    { "select": { "minecraft": ">=1.7.10", "loaders": ["vanilla", "fabric", "forge", "neoforge"], "latestPatchOnly": true } }
   ],
   "mods": [
     { "path": "build/libs/verity-testmod-*.jar" }
   ],
   "jvm": { "memoryMb": 2048, "args": ["-Dverity.sample.delay=15"] },
   "display": { "mode": "headless" },
-  "test": { "startupTimeoutSec": 900, "timeoutSec": 1200, "vanillaSmokeSec": 60 }
+  "test": { "startupTimeoutSec": 300, "timeoutSec": 360 }
 }

@@ -16,10 +16,11 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 - Tests tagged `e2e` are excluded unless `-Pe2e` is passed. `XvfbDisplayTest` skips itself without Xvfb.
 - `RunOrchestratorTest` runs the whole pipeline against fake game JVMs (`FakeGame`) from a pre-seeded home, so it
   needs no network. Use that pattern for anything touching install/launch/session logic.
-- Real Minecraft is only exercised by the CI "Minecraft matrix" job (`.github/workflows/ci.yml`, Linux + Windows),
-  which runs `samples/testmod/verity.json` (7 targets) through the repo's own `action.yml`, and nightly by
-  `full-matrix.yml`: `samples/testmod/verity-full.json`, the newest patch of every minor version per loader (~34
-  targets), one job per loader and OS. Locally, keep `-p` at about 3; each client plus Mesa takes several GB. Cloud sandboxes usually can't reach
+- Real Minecraft is only exercised on CI, through the repo's own `action.yml` in plan mode, on Linux and Windows.
+  `ci.yml` runs `samples/testmod/verity.json` (the newest patch of every minor version per loader, ~34 targets)
+  on every push and PR, with cached installs. `all-targets.yml` runs `samples/testmod/verity-all.json` (every
+  version, ~127 targets) nightly and cold: `cache: false` and no prepare jobs, since older patches and first installs
+  are where launcher bugs hide. Locally, keep `-p` at about 3; each client plus Mesa takes several GB. Cloud sandboxes usually can't reach
   Mojang/Fabric/Forge/NeoForge hosts, so check CI logs (GitHub MCP `get_job_logs`) to verify real launches.
 - Maven Central sometimes returns HTTP 429. Retry with `--max-workers=2` and a short backoff.
 - Pushing a `v*` tag releases: `release.yml` takes the version from the tag, deploys `verity-api` to

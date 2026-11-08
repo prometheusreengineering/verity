@@ -262,7 +262,7 @@ reports at the time, and those per-target times weren't re-derived for this docu
 
 ## OS comparison before caching (up to 2026-11-06)
 
-Median job time over the last 5 nightly runs of `full-matrix.yml` (`samples/testmod/verity-full.json`: the newest
+Median job time over the last 5 nightly runs of `full-matrix.yml` (`../samples/testmod/verity.json`: the newest
 patch of every minor version per loader, about 34 targets, one job per loader and OS, no Verity cache). Runs:
 V 42207186414, 42016046005, 41818470351, 41758285345, 41752388070.
 
