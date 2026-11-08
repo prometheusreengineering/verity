@@ -1,13 +1,14 @@
 {
   "name": "verity-sample-all",
-  "description": "Nightly cold matrix: the sample mod on every patch Minecraft version each loader supports.",
+  "description": "Nightly cold matrix: the sample agent and mod on every Minecraft version, vanilla and each loader. Passes once the game reaches its main menu.",
   "targets": [
     { "select": { "minecraft": ">=1.7.10", "loaders": ["vanilla", "fabric", "forge", "neoforge"] } }
   ],
   "mods": [
-    { "path": "build/libs/verity-testmod-*.jar" }
+    { "path": "build/libs/verity-testmod-*.jar" },
+    { "path": "../testagent/build/libs/verity-testagent-*.jar", "agent": true }
   ],
-  "jvm": { "memoryMb": 2048, "args": ["-Dverity.sample.delay=15"] },
+  "jvm": { "memoryMb": 2048, "args": ["-Dverity.sample.trace=true"] },
   "display": { "mode": "headless" },
   "test": { "startupTimeoutSec": 300, "timeoutSec": 360 }
 }

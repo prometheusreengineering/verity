@@ -36,7 +36,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
       - name: Build
-        run: ./gradlew build :verity-cli:shadowJar :samples:testmod:shadowJar --stacktrace
+        run: ./gradlew build :verity-cli:shadowJar :samples:testmod:shadowJar :samples:testagent:shadowJar --stacktrace
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4
@@ -50,6 +50,7 @@ jobs:
           path: |
             verity-cli/build/libs/verity-cli-*.jar
             samples/testmod/build/libs/verity-testmod-*.jar
+            samples/testagent/build/libs/verity-testagent-*.jar
 
   # The sample mod on the newest patch of every minor version per loader (samples/testmod/verity.json, about 34
   # targets), split across runners by Verity's plan mode. Each cache group's prepare job fills its caches once a week.
@@ -74,6 +75,8 @@ jobs:
         run: |
           mkdir -p samples/testmod/build/libs
           cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          mkdir -p samples/testagent/build/libs
+          cp jars/samples/testagent/build/libs/verity-testagent-*.jar samples/testagent/build/libs/
           echo "cli=$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)" >> "$GITHUB_OUTPUT"
       - id: plan
         uses: ./
@@ -107,6 +110,8 @@ jobs:
         run: |
           mkdir -p samples/testmod/build/libs
           cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          mkdir -p samples/testagent/build/libs
+          cp jars/samples/testagent/build/libs/verity-testagent-*.jar samples/testagent/build/libs/
           jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
           if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
           echo "cli=$jar" >> "$GITHUB_OUTPUT"
@@ -139,6 +144,8 @@ jobs:
         run: |
           mkdir -p samples/testmod/build/libs
           cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          mkdir -p samples/testagent/build/libs
+          cp jars/samples/testagent/build/libs/verity-testagent-*.jar samples/testagent/build/libs/
           jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
           if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
           echo "cli=$jar" >> "$GITHUB_OUTPUT"

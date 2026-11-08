@@ -272,6 +272,48 @@ class RunOrchestratorTest {
     }
 
     @Test
+    void agentEntriesAreAttachedToVanillaAndReportOverTheirOwnConnection() throws Exception {
+        VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
+        Profile p = fakeProfile(home, "fake-agent");
+        p.test.vanillaSmokeSec = 0; // must pass by reporting, not by surviving
+        Path agent = tmp.resolve("agents/fake-agent.jar");
+        Files.createDirectories(agent.getParent());
+        java.util.jar.Manifest manifest = new java.util.jar.Manifest();
+        manifest.getMainAttributes().put(java.util.jar.Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().putValue("Premain-Class", FakeAgent.class.getName());
+        try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(agent), manifest)) {
+            String name = FakeAgent.class.getName().replace('.', '/') + ".class";
+            out.putNextEntry(new ZipEntry(name));
+            try (InputStream in = FakeAgent.class.getClassLoader().getResourceAsStream(name)) {
+                in.transferTo(out);
+            }
+        }
+        Profile.ModEntry entry = Profile.ModEntry.of("agents/*.jar");
+        entry.agent = true;
+        p.mods.add(entry);
+
+        RunOptions opts = new RunOptions();
+        opts.displayProvider = NO_DISPLAY;
+        opts.reportDir = tmp.resolve("report");
+        List<String> lines = Collections.synchronizedList(new java.util.ArrayList<>());
+        RunReport report = new RunOrchestrator(context(home)).start(p, opts, new RunListener() {
+            @Override
+            public void targetLog(Target target, String line) {
+                lines.add(line);
+            }
+        }).report().get(120, TimeUnit.SECONDS);
+
+        TargetResult r = report.results.get(0);
+        assertThat(r.status).as(r.message).isEqualTo(Status.PASSED);
+        assertThat(r.checks).extracting(CheckResult::name).containsExactlyInAnyOrder("agent connected", "agent attached");
+        assertThat(r.mods).containsExactly("fake-agent.jar (agent)");
+        // Attached with -javaagent, not copied into the mods folder.
+        assertThat(lines).contains("mods:");
+        assertThat(Files.readString(Path.of(report.runDir).resolve("targets/fake-agent-vanilla/command.txt")))
+                .contains("-javaagent:" + agent.toAbsolutePath());
+    }
+
+    @Test
     void aClientWithoutAnyGraphicsBackendCrashesInsteadOfPassingOrTimingOut() throws Exception {
         VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
         Profile p = fakeProfile(home, "fake-nobackend");

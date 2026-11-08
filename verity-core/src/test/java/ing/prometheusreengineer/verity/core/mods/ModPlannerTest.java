@@ -65,4 +65,35 @@ class ModPlannerTest {
             assertThat(ruled.mods().get(1).reason()).contains("rule: loaders");
         }
     }
+
+    @Test
+    void agentsGoToEveryTargetTheirRulesAllowAndStayOutOfTheModsFolder() throws Exception {
+        TestJars.jar(tmp.resolve("mod/sample.jar"), Map.of("fabric.mod.json", "{\"id\":\"sample\"}"));
+        TestJars.jar(tmp.resolve("agent/agent.jar"), Map.of("a.txt", "x"), Map.of("Premain-Class", "x.Agent"));
+        Profile p = new Profile();
+        p.source = tmp.resolve("verity.json");
+        p.mods.add(Profile.ModEntry.of("mod/*.jar"));
+        Profile.ModEntry agent = Profile.ModEntry.of("agent/agent.jar");
+        agent.agent = true;
+        p.mods.add(agent);
+
+        Target vanilla = new Target("1.20.1", LoaderType.VANILLA, null);
+        Target fabric = new Target("1.20.1", LoaderType.FABRIC, null);
+        Map<Target, ModPlanner.TargetPlan> plan = ModPlanner.plan(p, List.of(vanilla, fabric), ModResolver.expand(p), null,
+                new VerityHome(tmp.resolve("home")));
+
+        assertThat(plan.get(vanilla).paths()).isEmpty();
+        assertThat(plan.get(vanilla).agentPaths()).extracting(x -> x.getFileName().toString()).containsExactly("agent.jar");
+        assertThat(plan.get(vanilla).missingEntries()).containsExactly("mod/*.jar"); // vanilla loads no mods, agents still go
+        assertThat(plan.get(fabric).paths()).extracting(x -> x.getFileName().toString()).containsExactly("sample.jar");
+        assertThat(plan.get(fabric).agentPaths()).extracting(x -> x.getFileName().toString()).containsExactly("agent.jar");
+        assertThat(plan.get(fabric).included().get(1).reason()).isEqualTo("java agent");
+
+        agent.loaders = List.of(LoaderType.VANILLA);
+        Map<Target, ModPlanner.TargetPlan> ruled = ModPlanner.plan(p, List.of(vanilla, fabric), ModResolver.expand(p), null,
+                new VerityHome(tmp.resolve("home")));
+        assertThat(ruled.get(vanilla).agentPaths()).hasSize(1);
+        assertThat(ruled.get(fabric).agentPaths()).isEmpty();
+        assertThat(ruled.get(fabric).mods().get(1).reason()).contains("rule: loaders");
+    }
 }

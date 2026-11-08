@@ -79,7 +79,8 @@ public final class RunOrchestrator {
             display.warnings().forEach(listener::warning);
         }
         LaunchAccount account = options.prepareOnly ? LaunchAccount.offline("Verity") : accounts.resolve(profile.account);
-        if (!targets.isEmpty() && targets.stream().allMatch(t -> t.loader() == ing.prometheusreengineer.verity.core.meta.LoaderType.VANILLA) && !profile.mods.isEmpty()) {
+        if (!targets.isEmpty() && targets.stream().allMatch(t -> t.loader() == ing.prometheusreengineer.verity.core.meta.LoaderType.VANILLA)
+                && profile.mods.stream().anyMatch(m -> !m.agent)) {
             listener.warning("All targets are vanilla, which cannot load mods");
         }
 
@@ -105,8 +106,8 @@ public final class RunOrchestrator {
                 continue;
             }
             Path instance = ctx.home().instances().resolve(FileUtil.safeName(profile.name)).resolve(t.id());
-            sessions.add(new ClientSession(t, profile, installer, hook, display, account, tp.paths(), tp.downloads(), instance,
-                    runDir, !keep, listener, barrier));
+            sessions.add(new ClientSession(t, profile, installer, hook, display, account, tp.paths(), tp.agentPaths(),
+                    tp.downloads(), instance, runDir, !keep, listener, barrier));
         }
         listener.runStarted(profile.name, targets, runDir);
         for (Target t : targets) {
@@ -206,6 +207,9 @@ public final class RunOrchestrator {
             if (hasPath == m.fromModrinth()) {
                 throw new ProfileException("Each mod entry needs exactly one of \"path\" or \"modrinth\""
                         + (hasPath ? " (both set: " + m.path + ", " + m.modrinth + ")" : ""));
+            }
+            if (m.agent && m.fromModrinth()) {
+                throw new ProfileException("Java agents must be local jars (\"agent\" with \"modrinth\": " + m.modrinth + ")");
             }
             if (m.channel != null && !m.channel.isBlank() && !m.channel.matches("(?i)release|beta|alpha")) {
                 throw new ProfileException("Mod channel must be release, beta or alpha (got '" + m.channel + "')");

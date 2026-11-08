@@ -1,13 +1,14 @@
 {
   "name": "verity-sample",
-  "description": "Default matrix: the sample mod on the newest patch of every minor Minecraft version each loader supports.",
+  "description": "Default matrix: the sample agent and mod on the newest patch of every minor Minecraft version, vanilla and each loader. Passes once the game reaches its main menu.",
   "targets": [
     { "select": { "minecraft": ">=1.7.10", "loaders": ["vanilla", "fabric", "forge", "neoforge"], "latestPatchOnly": true } }
   ],
   "mods": [
-    { "path": "build/libs/verity-testmod-*.jar" }
+    { "path": "build/libs/verity-testmod-*.jar" },
+    { "path": "../testagent/build/libs/verity-testagent-*.jar", "agent": true }
   ],
-  "jvm": { "memoryMb": 2048, "args": ["-Dverity.sample.delay=15"] },
+  "jvm": { "memoryMb": 2048, "args": ["-Dverity.sample.trace=true"] },
   "display": { "mode": "headless" },
   "test": { "startupTimeoutSec": 300, "timeoutSec": 360 }
 }

@@ -43,6 +43,19 @@ public final class GameInstaller {
         return ctx.home().versions().resolve(id).resolve(id + ".jar");
     }
 
+    /** Mojang's client mappings for vanilla {@code mc} (official → obfuscated names, ProGuard format). */
+    public Path clientMappings(String mc) {
+        return ctx.home().versions().resolve(mc).resolve(mc + "-client-mappings.txt");
+    }
+
+    /** Downloads {@link #clientMappings}, if Mojang publishes them for {@code mc} (1.14.4 and later). */
+    public void ensureClientMappings(String mc) throws IOException {
+        VersionJson v = ctx.meta().mojang().vanillaVersion(mc);
+        VersionJson.DownloadInfo m = v.downloads == null ? null : v.downloads.get("client_mappings");
+        if (m == null || m.url == null) return;
+        ctx.downloader().download(new Downloader.Artifact(List.of(URI.create(m.url)), clientMappings(mc), m.sha1, m.size, true));
+    }
+
     /** Installs everything {@code versionId} needs and returns its flattened JSON. */
     public InstalledVersion complete(String versionId, Progress progress) throws IOException {
         List<VersionJson> chain = ctx.resolver().chain(versionId);

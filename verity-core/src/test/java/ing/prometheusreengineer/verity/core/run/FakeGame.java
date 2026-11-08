@@ -49,6 +49,11 @@ public class FakeGame {
                 Files.writeString(crash, "---- Minecraft Crash Report ----\n\nDescription: Initializing game\n\njava.lang.NoSuchMethodError: foo\n");
                 System.exit(-1);
             }
+            case "fake-agent" -> {
+                Verity.pass("agent " + System.getProperty("fake.agent"));
+                Verity.finish();
+                Thread.sleep(60_000);
+            }
             case "fake-idle" -> Thread.sleep(60_000); // vanilla-like: never talks to Verity
             case "fake-nobackend" -> {
                 // 26.3+ with no working renderer: both backends fail, then the game waits on a dialog forever.

@@ -99,6 +99,11 @@ public final class ModResolver {
 
     public static Decision decide(ModFile m, Target target) {
         Profile.ModEntry e = m.entry();
+        // A Java agent hooks the JVM, not the loader, so it goes to every target (vanilla too) its rules allow.
+        if (e.agent) {
+            String rejected = ruleRejection(e, target);
+            return rejected != null ? new Decision(m, false, rejected) : new Decision(m, true, "java agent");
+        }
         if (target.loader() == LoaderType.VANILLA) return new Decision(m, false, "vanilla loads no mods");
         if (e.hasRules()) {
             String rejected = ruleRejection(e, target);

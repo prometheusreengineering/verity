@@ -164,6 +164,7 @@ runs:
           .verity-home/assets
           .verity-home/versions/*/*.json
           .verity-home/versions/*/*.jar
+          .verity-home/versions/*/*.txt
           !.verity-home/versions/*-*/*.jar
           .verity-home/installers/*.installed
           .verity-home/mods-cache
@@ -231,6 +232,7 @@ runs:
           .verity-home/assets
           .verity-home/versions/*/*.json
           .verity-home/versions/*/*.jar
+          .verity-home/versions/*/*.txt
           !.verity-home/versions/*-*/*.jar
           .verity-home/installers/*.installed
           .verity-home/mods-cache
@@ -463,6 +465,7 @@ runs:
           .verity-home/assets
           .verity-home/versions/*/*.json
           .verity-home/versions/*/*.jar
+          .verity-home/versions/*/*.txt
           !.verity-home/versions/*-*/*.jar
           .verity-home/installers/*.installed
           .verity-home/mods-cache

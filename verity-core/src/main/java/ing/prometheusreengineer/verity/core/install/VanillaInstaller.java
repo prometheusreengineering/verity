@@ -14,6 +14,8 @@ public final class VanillaInstaller {
     public InstalledVersion install(String mc, Progress progress) throws Exception {
         return ctx.locks().withLock("install-" + mc, () -> {
             game.ensureVanilla(mc, progress);
+            // For agents on vanilla, which only sees obfuscated names (passed to the game as verity.mappings).
+            game.ensureClientMappings(mc);
             return game.complete(mc, progress);
         });
     }

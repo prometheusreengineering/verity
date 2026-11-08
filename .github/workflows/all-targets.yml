@@ -12,6 +12,8 @@ on:
     paths:
       - .github/workflows/all-targets.yml
       - samples/testmod/verity-all.json
+      - samples/testmod/src/**
+      - samples/testagent/src/**
   workflow_dispatch:
     inputs:
       only:
@@ -40,13 +42,14 @@ jobs:
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
       - name: Build
-        run: ./gradlew :verity-cli:shadowJar :samples:testmod:shadowJar --stacktrace
+        run: ./gradlew :verity-cli:shadowJar :samples:testmod:shadowJar :samples:testagent:shadowJar --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: all-targets-jars
           path: |
             verity-cli/build/libs/verity-cli-*-all.jar
             samples/testmod/build/libs/verity-testmod-*.jar
+            samples/testagent/build/libs/verity-testagent-*.jar
           if-no-files-found: error
 
   # The plan lists prepare jobs too, since it finds no caches; they're left out on purpose (see the top).
@@ -68,6 +71,8 @@ jobs:
         run: |
           mkdir -p samples/testmod/build/libs
           cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          mkdir -p samples/testagent/build/libs
+          cp jars/samples/testagent/build/libs/verity-testagent-*.jar samples/testagent/build/libs/
           echo "cli=$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)" >> "$GITHUB_OUTPUT"
       - id: plan
         uses: ./
@@ -97,6 +102,8 @@ jobs:
         run: |
           mkdir -p samples/testmod/build/libs
           cp jars/samples/testmod/build/libs/verity-testmod-*.jar samples/testmod/build/libs/
+          mkdir -p samples/testagent/build/libs
+          cp jars/samples/testagent/build/libs/verity-testagent-*.jar samples/testagent/build/libs/
           jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
           if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
           echo "cli=$jar" >> "$GITHUB_OUTPUT"

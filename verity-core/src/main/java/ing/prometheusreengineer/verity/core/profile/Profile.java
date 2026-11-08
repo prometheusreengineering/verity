@@ -116,6 +116,11 @@ public class Profile {
         public List<LoaderType> loaders = new ArrayList<>();
         /** Optional manual rule: only these Minecraft versions. */
         public String minecraft;
+        /**
+         * Attach the jar with {@code -javaagent} instead of putting it in the mods folder. It goes to every target the
+         * rules above allow, vanilla included, since an agent doesn't need a loader. Local paths only.
+         */
+        public boolean agent;
 
         public static ModEntry of(String path) {
             ModEntry m = new ModEntry();

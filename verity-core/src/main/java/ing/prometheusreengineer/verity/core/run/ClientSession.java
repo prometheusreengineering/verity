@@ -52,8 +52,12 @@ public final class ClientSession {
     private final Installer installer;
     private final HookServer hook;
     private final DisplayProvider display;
+    /** Path to Mojang's client mappings (official → obfuscated names), set for vanilla 1.14.4+. */
+    public static final String PROP_MAPPINGS = "verity.mappings";
+
     private final LaunchAccount account;
     private final List<Path> mods;
+    private final List<Path> agents;
     private final List<ing.prometheusreengineer.verity.core.net.Downloader.Artifact> downloads;
     private final Path instanceRoot;
     private final Path reportDir;
@@ -79,8 +83,9 @@ public final class ClientSession {
     private volatile GameProcess process;
 
     ClientSession(Target target, Profile profile, Installer installer, HookServer hook, DisplayProvider display, LaunchAccount account,
-                  List<Path> mods, List<ing.prometheusreengineer.verity.core.net.Downloader.Artifact> downloads, Path instanceRoot, Path runDir,
-                  boolean freshInstance, RunListener listener, InstallBarrier barrier) {
+                  List<Path> mods, List<Path> agents, List<ing.prometheusreengineer.verity.core.net.Downloader.Artifact> downloads,
+                  Path instanceRoot, Path runDir, boolean freshInstance, RunListener listener, InstallBarrier barrier) {
+        this.agents = agents;
         this.barrier = barrier;
         this.target = target;
         this.profile = profile;
@@ -99,7 +104,10 @@ public final class ClientSession {
         result.minecraft = target.minecraft();
         result.loader = target.loader().id();
         result.loaderVersion = target.loaderVersion();
-        result.mods = mods.stream().map(p -> p.getFileName().toString()).toList();
+        List<String> names = new ArrayList<>();
+        for (Path p : mods) names.add(p.getFileName().toString());
+        for (Path p : agents) names.add(p.getFileName() + " (agent)");
+        result.mods = names;
         result.status = Status.PENDING;
     }
 
@@ -231,6 +239,14 @@ public final class ClientSession {
             sysProps.put(Verity.PROP_TOKEN, token);
             sysProps.put(Verity.PROP_TARGET, target.id());
             if (profile.run.isolateHome) sysProps.put("user.home", layout.homeDir().toString());
+            // Vanilla's classes are obfuscated; Mojang's mappings (1.14.4+) let an agent find a class by its real name.
+            Path mappings = installer.game().clientMappings(target.minecraft());
+            if (target.loader() == LoaderType.VANILLA && Files.isRegularFile(mappings)) {
+                sysProps.put(PROP_MAPPINGS, mappings.toAbsolutePath().toString());
+            }
+            List<String> jvmArgs = new ArrayList<>();
+            for (Path a : agents) jvmArgs.add("-javaagent:" + a.toAbsolutePath());
+            jvmArgs.addAll(profile.jvm.args);
 
             boolean virtualAssets = installer.game().isVirtualAssets(version.version());
             Path assetsRoot = installer.context().home().assets();
@@ -240,7 +256,7 @@ public final class ClientSession {
             LaunchRequest req = new LaunchRequest(version, java, layout.gameDir(), layout.nativesDir(),
                     installer.context().home().libraries(), assetsRoot, gameAssets, installer.game().loggingConfig(version.version()),
                     classpath, account, profile.jvm.memoryMb, profile.display.width, profile.display.height,
-                    profile.jvm.args, profile.game.args, sysProps);
+                    jvmArgs, profile.game.args, sysProps);
             List<String> cmd = LaunchCommandBuilder.build(req, env);
             Files.writeString(reportDir.resolve("command.txt"), LaunchCommandBuilder.describe(cmd, account.accessToken()));
 

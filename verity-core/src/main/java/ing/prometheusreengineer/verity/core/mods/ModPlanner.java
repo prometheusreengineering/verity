@@ -34,8 +34,14 @@ public final class ModPlanner {
             return mods.stream().filter(PlannedMod::included).toList();
         }
 
+        /** Jars that go into the game's mods folder. */
         public List<Path> paths() {
-            return included().stream().map(PlannedMod::path).toList();
+            return included().stream().filter(m -> !m.entry().agent).map(PlannedMod::path).toList();
+        }
+
+        /** Jars attached with {@code -javaagent}. */
+        public List<Path> agentPaths() {
+            return included().stream().filter(m -> m.entry().agent).map(PlannedMod::path).toList();
         }
 
         public List<Downloader.Artifact> downloads() {
