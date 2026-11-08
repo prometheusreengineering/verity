@@ -26,7 +26,7 @@ public final class ModResolver {
         }
     }
 
-    /** Why a jar was or wasn't assigned to a target, for the UI preview and {@code verity plan}. */
+    /** Why a jar was or wasn't assigned to a target, for {@code verity plan}. */
     public record Decision(ModFile mod, boolean included, String reason) {
     }
 

@@ -1,8 +1,6 @@
 [versions]
 jackson = "2.22.3"
 picocli = "4.7.7"
-javafx = "21.0.12"
-atlantafx = "2.1.0"
 jna = "5.19.1"
 commons-compress = "1.28.0"
 xz = "1.12"
@@ -14,7 +12,6 @@ jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", ver
 jackson-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }
 jackson-toml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-toml", version.ref = "jackson" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
-atlantafx = { module = "io.github.mkpaz:atlantafx-base", version.ref = "atlantafx" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
@@ -25,5 +22,4 @@ junit-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 
 [plugins]
-javafx = { id = "org.openjfx.javafxplugin", version = "0.1.0" }
 shadow = { id = "com.gradleup.shadow", version = "8.3.9" }

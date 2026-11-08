@@ -62,7 +62,7 @@ public final class MesaGl {
         return ctx.locks().withLock("mesa", () -> {
             if (Files.isRegularFile(x64.resolve("opengl32.dll"))) return x64;
             // Every client of a run asks; after a failure the rest skip straight to the fallback for a while, but a
-            // transient failure (rate limit, network) must not stick for the lifetime of a long-running UI.
+            // transient failure (rate limit, network) must not stick for the lifetime of the process.
             Failure failed = FAILURES.get(dir);
             if (failed != null && System.nanoTime() - failed.atNanos() < RETRY_AFTER_NANOS) throw failed.error();
             try {

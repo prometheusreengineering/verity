@@ -15,10 +15,8 @@ testing each version and loader by hand.
   hidden Win32 desktop per client on Windows, with Mesa software OpenGL for machines without a GPU (CI).
 - **Real results.** Your mod reports checks through the tiny `verity-api` (Java 8, no dependencies, safe to shade).
   Crashes, early exits and timeouts fail the target, and crash reports are collected.
-- **UI and CLI.** A JavaFX desktop app for day-to-day use, and a CLI plus GitHub Action for CI, with JUnit XML, JSON
-  and self-contained HTML reports.
-
-![Run view](docs/images/run.png)
+- **Built for CI.** A CLI and a GitHub Action that plans the run across runners itself, with JUnit XML, JSON and
+  self-contained HTML reports.
 
 ## Contents
 
@@ -41,10 +39,7 @@ Verity needs Java 21 to run. Each game client gets its own Java runtime, downloa
 versions, 17/21 for new ones.
 
 ```bash
-# Desktop app (from a release, or build it: ./gradlew :verity-app:shadowJar)
-java -jar verity-<version>-linux.jar          # or verity-<version>-windows.jar
-
-# CLI
+# verity-cli.jar from a release, or build it: ./gradlew :verity-cli:shadowJar
 java -jar verity-cli.jar profile new essential \
   -t 1.8.9:forge -t 1.12.2:forge -t 1.20.1:fabric -t 1.20.1:forge -t 1.21.1:neoforge \
   -m "/path/to/minecraft-essential/target/prometheus-*.jar" -m /path/to/essential-jars/
@@ -59,7 +54,7 @@ Later runs reuse the cache.
 
 ## Profiles
 
-Profiles are JSON files. The UI stores them in `<home>/profiles/`. A profile can also live in your mod's repository
+Profiles are JSON files. `verity profile new` and `import` store them in `<home>/profiles/`. A profile can also live in your mod's repository
 (`verity.json`), where relative paths resolve against the file.
 
 ```jsonc
@@ -231,7 +226,6 @@ verity modrinth search <query> | versions <project> [--mc 1.20.1 --loader fabric
 verity versions [vanilla|fabric|forge|neoforge] [--mc 1.20.1]
 verity account login | list | rm <name> | ci-token <name>
 verity cache info | clean [--all] [--meta]
-verity ui
 Global: --home DIR (or VERITY_HOME)
 Exit codes: 0 all passed (skipped targets don't count) · 1 some target failed · 2 configuration error · 3 internal error
 ```
@@ -404,10 +398,7 @@ Each target's report folder contains `output.log` (raw stdout/stderr), `console.
 
 ```bash
 ./gradlew build                         # all modules + unit tests (incl. an end-to-end run with fake game JVMs)
-./gradlew :verity-app:run               # start the UI
-./gradlew :verity-cli:shadowJar         # verity-cli/build/libs/verity-cli-<v>-all.jar (no JavaFX, for CI)
-./gradlew :verity-app:shadowJar         # verity-app/build/libs/verity-<v>-<os>.jar (UI + CLI)
-./gradlew :verity-app:jpackageImage     # self-contained app image with bundled Java
+./gradlew :verity-cli:shadowJar         # verity-cli/build/libs/verity-cli-<v>-all.jar
 ./gradlew :samples:testmod:shadowJar    # the universal sample mod
 ```
 
@@ -416,8 +407,6 @@ Each target's report folder contains `output.log` (raw stdout/stderr), `console.
 | `verity-api` | The Java 8 test-hook API mods use |
 | `verity-core` | Metadata, installers (vanilla/Fabric/Forge/NeoForge), Java runtimes, launching, displays, mod assignment, orchestration, reports |
 | `verity-cli` | picocli command line |
-| `verity-ui` | JavaFX UI (AtlantaFX theme) |
-| `verity-app` | Entry point: UI without arguments, CLI otherwise |
 | `samples/testmod` | Universal sample mod and Verity's own e2e profile |
 
 ## Limitations

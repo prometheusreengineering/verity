@@ -9,9 +9,7 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 ```bash
 ./gradlew build                        # all modules + unit tests (Java 21 toolchain)
 ./gradlew :verity-core:test --tests '*RunOrchestratorTest*'
-./gradlew :verity-app:run              # desktop UI
-./gradlew :verity-cli:shadowJar        # verity-cli/build/libs/verity-cli-<v>-all.jar (no JavaFX; used by CI/action)
-./gradlew :verity-app:shadowJar        # verity-<v>-<os>.jar (UI + CLI)
+./gradlew :verity-cli:shadowJar        # verity-cli/build/libs/verity-cli-<v>-all.jar (released as verity-cli.jar; used by the action)
 ./gradlew :samples:testmod:shadowJar   # universal sample mod used by the e2e matrix
 ```
 
@@ -44,8 +42,6 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 | `verity-api` | **Java 8 (`--release 8`), zero dependencies.** Mods shade and relocate it. Never add deps or newer APIs. |
 | `verity-core` | Engine. Packages: `meta` (Mojang/Fabric/Forge/NeoForge metadata), `install` (vanilla/Fabric/Forge processors, Java runtimes), `launch` (command builder, natives, instance layout, log parsing), `display` (window, Xvfb, Win32 hidden desktop + Mesa), `mods` (jar inspection, `ModPlanner`: per-target assignment of local + Modrinth mods), `modrinth` (API client, per-target file/dependency picking), `profile`, `hook` (socket server for verity-api), `run` (orchestrator, `ClientSession` state machine, `Shard`), `ci` (`CiPlanner`/`CostModel`: runner count, OS split, shards and cache groups for `verity matrix` and the action's plan mode), `report` (JSON/JUnit/HTML), `auth`, `net`, `home`, `util` |
 | `verity-cli` | picocli. Exit codes: 0 pass, 1 test failures, 2 config error (`ProfileException`), 3 internal error |
-| `verity-ui` | JavaFX + AtlantaFX, code-only (no FXML). All work goes through `verity-core`; background work via `Fx.async`, run events batched through `RunTab`'s pump. |
-| `verity-app` | `Main`: no args → UI, else CLI. Shadow jar + `jpackageImage` |
 | `samples/testmod` | One Java 8 jar for Fabric, FML 1.7.10, Forge 1.8–1.12, Forge 1.13+, NeoForge, built against compile-only stubs in `src/stubs` |
 
 ## Conventions and gotchas

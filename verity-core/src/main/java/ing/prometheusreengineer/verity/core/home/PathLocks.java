@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Named locks that hold both within this JVM and across processes (UI and CLI sharing one home), used to
+ * Named locks that hold both within this JVM and across processes (several runs sharing one home), used to
  * serialize installs of the same version.
  */
 public final class PathLocks {

@@ -3,7 +3,7 @@ package ing.prometheusreengineer.verity.core.run;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Live run events for the CLI and UI. Called from worker threads. */
+/** Live run events for the CLI. Called from worker threads. */
 public interface RunListener {
     default void runStarted(String profile, List<Target> targets, Path runDir) {
     }

@@ -113,8 +113,7 @@ Locally:
 mvn -q package && java -jar verity-cli.jar run verity.json
 ```
 
-Or open the desktop app, import `verity.json` (Profiles → Import…) and press **Run**. On every change, rebuild and
-press Run again: the glob picks up the new jar.
+On every change, rebuild and run it again: the glob picks up the new jar.
 
 On CI (`.github/workflows/verity.yml`):
 

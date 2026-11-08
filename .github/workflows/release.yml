@@ -24,21 +24,17 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build jars and app image
+      # Both OSes build and test; the jars are the same everywhere, so only Linux uploads them.
+      - name: Build and test
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          ./gradlew -Pversion="$version" build :verity-cli:shadowJar :verity-app:shadowJar :verity-app:jpackageImage :samples:testmod:shadowJar
+          ./gradlew -Pversion="$version" build :verity-cli:shadowJar :samples:testmod:shadowJar
           mkdir -p dist
-          cp verity-app/build/libs/verity-*.jar dist/
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            cp verity-cli/build/libs/verity-cli-*-all.jar dist/verity-cli.jar
-            cp verity-api/build/libs/verity-api-"$version"*.jar dist/
-            (cd verity-app/build/jpackage && tar czf ../../../dist/Verity-linux-x64.tar.gz Verity)
-          else
-            (cd verity-app/build/jpackage && 7z a ../../../dist/Verity-windows-x64.zip Verity > /dev/null)
-          fi
-      - uses: actions/upload-artifact@v4
+          cp verity-cli/build/libs/verity-cli-*-all.jar dist/verity-cli.jar
+          cp verity-api/build/libs/verity-api-"$version"*.jar dist/
+      - if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.os }}
           path: dist/*
