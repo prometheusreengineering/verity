@@ -1,10 +1,10 @@
 name: CI
 
 on:
-  # push:
-  #   # Not tags: release.yml covers them, and a tag's cache can't be restored by anything else.
-  #   branches: [main]
-  # pull_request:
+  push:
+    # Not tags: release.yml covers them, and a tag's cache can't be restored by anything else.
+    branches: [main]
+  pull_request:
   workflow_dispatch:
     inputs:
       e2e:
