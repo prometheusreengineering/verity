@@ -107,7 +107,7 @@ public final class MesaGl {
     private record Failure(IOException error, long atNanos) {
     }
 
-    static final long RETRY_AFTER_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(10);
+    static final long RETRY_AFTER_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(1);
     private static final Map<Path, Failure> FAILURES = new java.util.concurrent.ConcurrentHashMap<>();
 
     private void install(Path dir, Path x64, Progress progress) throws Exception {
@@ -119,17 +119,17 @@ public final class MesaGl {
         if (token != null && !token.isBlank()) headers.put("Authorization", "Bearer " + token);
         var response = ctx.http().get(URI.create(RELEASES), headers);
         if (response.statusCode() / 100 != 2) throw new IOException("GitHub API returned HTTP " + response.statusCode() + " for " + RELEASES);
-        List<String> urls = candidates(Json.tree(response.body()));
-        if (urls.isEmpty()) throw new IOException("No Mesa build found in " + RELEASES);
+        List<Asset> assets = candidates(Json.tree(response.body()));
+        if (assets.isEmpty()) throw new IOException("No Mesa build found in " + RELEASES);
         Path sevenZip = sevenZip(progress);
         Path archive = dir.resolve("mesa.7z");
         Path tmp = dir.resolve("extract");
         List<String> problems = new ArrayList<>();
-        for (String url : urls.subList(0, Math.min(urls.size(), MAX_ATTEMPTS))) {
-            String file = url.substring(url.lastIndexOf('/') + 1);
+        for (Asset asset : assets.subList(0, Math.min(assets.size(), MAX_ATTEMPTS))) {
+            String file = asset.name();
             try {
                 FileUtil.deleteRecursively(tmp);
-                ctx.downloader().download(new Downloader.Artifact(List.of(URI.create(url)), archive, null, -1, true));
+                ctx.downloader().download(new Downloader.Artifact(sources(asset, token, problems), archive, null, -1, true));
                 progress.stage("Extracting Mesa (" + file + ")");
                 extract(sevenZip, archive, tmp, dir.resolve("extract.log"));
                 // Some releases ship builds without OpenGL (e.g. 26.2.6 MSVC, a known d3d12 build regression).
@@ -152,17 +152,43 @@ public final class MesaGl {
 
     static final int MAX_ATTEMPTS = 4;
 
+    /** A release archive: its public download link and its API endpoint ({@code url}), which takes a token. */
+    record Asset(String name, String download, String api) {
+    }
+
     /** Release archives to try, newest release first, MSVC before MinGW within a release. */
-    static List<String> candidates(JsonNode releases) {
-        List<String> urls = new ArrayList<>();
+    static List<Asset> candidates(JsonNode releases) {
+        List<Asset> assets = new ArrayList<>();
         for (JsonNode release : releases) {
             if (release.path("draft").asBoolean() || release.path("prerelease").asBoolean()) continue;
             for (String suffix : new String[] {"-release-msvc.7z", "-release-mingw.7z"}) {
                 for (JsonNode a : release.path("assets")) {
-                    if (a.path("name").asText().endsWith(suffix)) urls.add(a.path("browser_download_url").asText());
+                    String name = a.path("name").asText();
+                    if (name.endsWith(suffix)) {
+                        assets.add(new Asset(name, a.path("browser_download_url").asText(), a.path("url").asText(null)));
+                    }
                 }
             }
         }
+        return assets;
+    }
+
+    /**
+     * Where to download an asset from. With a token, the API endpoint comes first: anonymous release downloads get
+     * refused (HTTP 403/429) after many cold CI runs, which used to leave whole Windows shards without Mesa. The API
+     * redirects to a signed storage link; the token goes only to the API, never to the storage host.
+     */
+    private List<URI> sources(Asset asset, String token, List<String> problems) {
+        List<URI> urls = new ArrayList<>();
+        if (token != null && !token.isBlank() && asset.api() != null && !asset.api().isBlank()) {
+            try {
+                urls.add(ctx.http().redirectTarget(URI.create(asset.api()),
+                        Map.of("Accept", "application/octet-stream", "Authorization", "Bearer " + token)));
+            } catch (IOException | RuntimeException e) {
+                problems.add(asset.name() + " via the API: " + e.getMessage());
+            }
+        }
+        urls.add(URI.create(asset.download()));
         return urls;
     }
 

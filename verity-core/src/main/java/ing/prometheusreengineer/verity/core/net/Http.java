@@ -69,7 +69,27 @@ public final class Http {
         return send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    /**
+     * Where {@code uri} redirects to, without following it, so {@code headers} (such as a token) reach only
+     * {@code uri} and never the redirect's host. Throws unless the answer is a redirect.
+     */
+    public URI redirectTarget(URI uri, Map<String, String> headers) throws IOException {
+        HttpClient.Builder b = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
+                .connectTimeout(client.connectTimeout().orElse(Duration.ofSeconds(20)));
+        client.proxy().ifPresent(b::proxy);
+        HttpRequest.Builder req = request(uri).GET();
+        headers.forEach(req::header);
+        HttpResponse<Void> r = send(b.build(), req.build(), HttpResponse.BodyHandlers.discarding());
+        String location = r.headers().firstValue("Location").orElse(null);
+        if (r.statusCode() / 100 != 3 || location == null) throw new HttpStatusException(uri, r.statusCode());
+        return uri.resolve(location);
+    }
+
     private <T> HttpResponse<T> send(HttpRequest req, HttpResponse.BodyHandler<T> handler) throws IOException {
+        return send(client, req, handler);
+    }
+
+    private static <T> HttpResponse<T> send(HttpClient client, HttpRequest req, HttpResponse.BodyHandler<T> handler) throws IOException {
         try {
             return client.send(req, handler);
         } catch (InterruptedException e) {

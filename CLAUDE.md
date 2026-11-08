@@ -77,7 +77,10 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 - Child version jars are copied to `versions/<id>/<id>.jar`, because Forge's `ignoreList` relies on `${version_name}.jar`.
 - Windows: Mesa (mesa-dist-win) is unpacked with 7-Zip (`7z.exe` or a downloaded `7zr.exe`), because the archives use
   BCJ2, which commons-compress can't decode. Some releases ship builds without OpenGL (26.2.6 MSVC), so `MesaGl`
-  tries MSVC then MinGW across recent releases. With `softwareGl=auto`, a Mesa failure falls back to the GPU.
+  tries MSVC then MinGW across recent releases. With `softwareGl=auto`, a Mesa failure falls back to the GPU, which
+  CI runners lack, so a failed Mesa download fails the client. With `GITHUB_TOKEN` set, archives come through the
+  asset API first (anonymous release downloads get refused after many cold runs); `Http.redirectTarget` keeps the
+  token off the storage host.
 - `Status.SKIPPED` (from `run.onlyTargetsWithAllMods`) is not a failure: use `Status.failure()`, not `!success()`,
   when deciding pass/fail. Modrinth tests use `FakeModrinth` (local HttpServer); point clients at it with the
   `verity.modrinth.api` system property.

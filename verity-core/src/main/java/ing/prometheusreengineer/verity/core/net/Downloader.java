@@ -124,13 +124,15 @@ public final class Downloader {
                 } catch (Http.HttpStatusException e) {
                     last = e;
                     if (e.status() == 404 || e.status() == 403 || e.status() == 410) break; // next mirror
+                    // 429 (rate limited) falls through to the backoff below.
                 } catch (IOException e) {
                     last = e;
                 }
-                sleep(500L * attempt * attempt);
+                if (attempt < ATTEMPTS) sleep(500L * attempt * attempt);
             }
         }
-        throw new IOException("Failed to download " + a.name() + " from " + a.urls(), last);
+        throw new IOException("Failed to download " + a.name() + " from " + a.urls()
+                + (last != null ? ": " + last.getMessage() : ""), last);
     }
 
     private void fetchOnce(URI url, Artifact a) throws IOException {

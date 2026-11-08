@@ -108,71 +108,9 @@ jobs:
           jar="$(ls "$PWD"/jars/verity-cli/build/libs/verity-cli-*-all.jar)"
           if [ "$RUNNER_OS" = "Windows" ]; then jar="$(cygpath -w "$jar")"; fi
           echo "cli=$jar" >> "$GITHUB_OUTPUT"
-      # Windows clients occasionally die of an access violation (0xC0000005) in early startup, without a JVM error
-      # log, with or without the sample agent. Have Windows write a minidump of every crashed java.exe, to see where.
-      - name: Turn on crash dumps
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $dumps = Join-Path $env:RUNNER_TEMP 'dumps'
-          New-Item -ItemType Directory -Force $dumps | Out-Null
-          $wer = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
-          New-Item -Force $wer | Out-Null
-          Set-ItemProperty $wer -Name Disabled -Value 0 -Type DWord
-          Set-ItemProperty $wer -Name DontShowUI -Value 1 -Type DWord
-          foreach ($exe in 'java.exe', 'javaw.exe') {
-            $key = "$wer\LocalDumps\$exe"
-            New-Item -Force $key | Out-Null
-            Set-ItemProperty $key -Name DumpFolder -Value $dumps -Type ExpandString
-            Set-ItemProperty $key -Name DumpType -Value 1 -Type DWord   # minidump
-            Set-ItemProperty $key -Name DumpCount -Value 20 -Type DWord
-          }
-          Write-Host "Minidumps of crashed java.exe go to $dumps"
-          Get-Service WerSvc | Format-Table -AutoSize Name, Status, StartType | Out-String | Write-Host
-          # The crashes leave no JVM log and no dump, which is how a process dies when Windows can't commit memory for a
-          # thread's stack. Record the commit charge against its limit to see whether the runner gets near it.
-          Start-Process typeperf -WindowStyle Hidden -ArgumentList @(
-            '"\Memory\Committed Bytes"', '"\Memory\Commit Limit"', '"\Memory\Available MBytes"',
-            '-si', '2', '-o', (Join-Path $dumps 'memory.csv'), '-y')
       - uses: ./
         with:
           profile: samples/testmod/verity-all.json
           jar: ${{ steps.jars.outputs.cli }}
           job: ${{ toJSON(matrix) }}
           cache: "false"
-      - name: Analyze crash dumps
-        id: dumps
-        if: always() && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $dumps = Join-Path $env:RUNNER_TEMP 'dumps'
-          Stop-Process -Name typeperf -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 1
-          "found=true" >> $env:GITHUB_OUTPUT
-          $mem = Join-Path $dumps 'memory.csv'
-          if (Test-Path $mem) {
-            $rows = Import-Csv $mem | Where-Object { $_.PSObject.Properties.Value[1] -match '^[0-9.]+$' }
-            $peak = $rows | Sort-Object { [double]$_.PSObject.Properties.Value[1] } -Descending | Select-Object -First 1
-            $v = $peak.PSObject.Properties.Value
-            Write-Host ("Peak commit {0:N1} GB of a {1:N1} GB limit ({2:P0}) at {3}; {4} MB available then; {5} samples" -f `
-              ([double]$v[1] / 1GB), ([double]$v[2] / 1GB), ([double]$v[1] / [double]$v[2]), $v[0], $v[3], $rows.Count)
-          }
-          $files = @(Get-ChildItem $dumps -Filter *.dmp -ErrorAction SilentlyContinue)
-          if ($files.Count -eq 0) { Write-Host 'No crash dumps.'; exit 0 }
-          $cdb = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $cdb) { Write-Host '::warning::cdb.exe not found; uploading the dumps unanalyzed.'; exit 0 }
-          foreach ($f in $files) {
-            $out = "$($f.FullName).txt"
-            & $cdb.FullName -z $f.FullName -y 'srv*C:\symbols*https://msdl.microsoft.com/download/symbols' `
-              -c '.symfix+ C:\symbols; .reload; !analyze -v; .ecxr; kb 40; ~*kb 8; lm; q' *> $out
-            Write-Host "::group::$($f.Name)"
-            Get-Content $out | Select-String -Pattern 'ExceptionAddress|ExceptionCode|FAULTING_|MODULE_NAME|IMAGE_NAME|SYMBOL_NAME|FAILURE_BUCKET|STACK_TEXT' -Context 0,12 | Out-String -Width 300 | Write-Host
-            Write-Host '::endgroup::'
-          }
-      - name: Upload crash dumps
-        if: always() && steps.dumps.outputs.found == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: crash-diagnostics-${{ matrix.name }}
-          path: ${{ runner.temp }}/dumps
-          retention-days: 14

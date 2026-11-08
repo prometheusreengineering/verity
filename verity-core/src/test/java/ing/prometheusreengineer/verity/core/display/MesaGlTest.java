@@ -36,11 +36,14 @@ class MesaGlTest {
                   {"tag_name":"26.2.6","assets":[
                     {"name":"mesa3d-26.2.6-debug-mingw.7z","browser_download_url":"u/dbg"},
                     {"name":"mesa3d-26.2.6-release-mingw.7z","browser_download_url":"u/6-mingw"},
-                    {"name":"mesa3d-26.2.6-release-msvc.7z","browser_download_url":"u/6-msvc"}]},
+                    {"name":"mesa3d-26.2.6-release-msvc.7z","browser_download_url":"u/6-msvc","url":"api/6-msvc"}]},
                   {"tag_name":"26.2.5","assets":[
                     {"name":"mesa3d-26.2.5-release-msvc.7z","browser_download_url":"u/5-msvc"}]} ]
                 """);
-        assertThat(MesaGl.candidates(releases)).containsExactly("u/6-msvc", "u/6-mingw", "u/5-msvc");
+        var assets = MesaGl.candidates(releases);
+        assertThat(assets).extracting(MesaGl.Asset::download).containsExactly("u/6-msvc", "u/6-mingw", "u/5-msvc");
+        assertThat(assets.get(0).api()).isEqualTo("api/6-msvc");
+        assertThat(assets.get(0).name()).isEqualTo("mesa3d-26.2.6-release-msvc.7z");
     }
 
     @Test

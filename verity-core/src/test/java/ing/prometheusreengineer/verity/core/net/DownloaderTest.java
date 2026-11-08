@@ -26,6 +26,8 @@ class DownloaderTest {
     String base;
     AtomicInteger hits = new AtomicInteger();
     volatile boolean online = true;
+    AtomicInteger limited = new AtomicInteger();
+    List<String> storageAuth = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @TempDir
     Path tmp;
@@ -36,8 +38,16 @@ class DownloaderTest {
         server.createContext("/", ex -> {
             hits.incrementAndGet();
             String path = ex.getRequestURI().getPath();
+            if (path.startsWith("/storage")) storageAuth.add(String.valueOf(ex.getRequestHeaders().getFirst("Authorization")));
             if (!online || path.startsWith("/missing")) {
                 ex.sendResponseHeaders(404, -1);
+            } else if (path.startsWith("/limited") && limited.getAndDecrement() > 0) {
+                ex.sendResponseHeaders(429, -1);
+            } else if (path.startsWith("/forbidden")) {
+                ex.sendResponseHeaders(403, -1);
+            } else if (path.startsWith("/api/asset")) {
+                ex.getResponseHeaders().add("Location", "/storage/mesa.7z?signature=x");
+                ex.sendResponseHeaders(302, -1);
             } else {
                 byte[] body = ("content of " + path).getBytes(StandardCharsets.UTF_8);
                 ex.sendResponseHeaders(200, body.length);
@@ -81,6 +91,34 @@ class DownloaderTest {
         Path mirrored = tmp.resolve("m.jar");
         d.download(new Downloader.Artifact(List.of(URI.create(base + "/missing/m.jar"), URI.create(base + "/m.jar")), mirrored, null, -1, true));
         assertThat(Files.readString(mirrored)).isEqualTo("content of /m.jar");
+    }
+
+    @Test
+    void retriesRateLimitsAndNamesTheStatusWhenItGivesUp() throws Exception {
+        limited.set(1);
+        Path target = tmp.resolve("limited.jar");
+        downloader().download(Downloader.Artifact.of(base + "/limited.jar", target, null, -1));
+        assertThat(target).hasContent("content of /limited.jar");
+
+        assertThatThrownBy(() -> downloader().download(Downloader.Artifact.of(base + "/forbidden.jar", tmp.resolve("f.jar"), null, -1)))
+                .hasMessageContaining("HTTP 403");
+    }
+
+    @Test
+    void redirectTargetSendsTheTokenOnlyToTheFirstHost() throws Exception {
+        Http http = new Http(java.net.http.HttpClient.newBuilder().proxy(java.net.ProxySelector.of(null))
+                .followRedirects(java.net.http.HttpClient.Redirect.NORMAL).build());
+        URI signed = http.redirectTarget(URI.create(base + "/api/asset/1"), java.util.Map.of("Authorization", "Bearer secret"));
+        assertThat(signed.toString()).isEqualTo(base + "/storage/mesa.7z?signature=x");
+        assertThat(storageAuth).isEmpty();
+
+        Path target = tmp.resolve("mesa.7z");
+        new Downloader(http, 1).download(new Downloader.Artifact(List.of(signed), target, null, -1, true));
+        assertThat(target).hasContent("content of /storage/mesa.7z");
+        assertThat(storageAuth).containsExactly("null");
+
+        assertThatThrownBy(() -> http.redirectTarget(URI.create(base + "/plain"), java.util.Map.of()))
+                .hasMessageContaining("HTTP 200");
     }
 
     @Test
