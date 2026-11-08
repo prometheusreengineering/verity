@@ -14,7 +14,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -26,6 +29,9 @@ public final class MesaGl {
     static final String RELEASES = "https://api.github.com/repos/pal1000/mesa-dist-win/releases?per_page=5";
     /** Official standalone 7-Zip extractor; Mesa's archives use the BCJ2 filter, which only 7-Zip itself decodes. */
     static final String SEVEN_ZR = "https://www.7-zip.org/a/7zr.exe";
+
+    /** Mesa runtime copies compared with their runtime in this process. */
+    private static final Set<Path> CHECKED = ConcurrentHashMap.newKeySet();
 
     private final InstallContext ctx;
 
@@ -42,7 +48,11 @@ public final class MesaGl {
         Path copy = runtime.resolveSibling(runtime.getFileName() + "-mesa");
         return ctx.locks().withLock("mesa-runtime-" + runtime.getFileName(), () -> {
             Path marker = copy.resolve(".verity-mesa");
-            if (!Files.isRegularFile(marker)) {
+            // Once per process, the copy is compared with its runtime by content: the runtime may have been repaired
+            // since (see JavaRuntimeManager), or the copy itself torn by a crash, and either way it's rebuilt.
+            boolean current = Files.isRegularFile(marker)
+                    && (CHECKED.contains(copy.toAbsolutePath()) || sameFiles(runtime, copy, dlls));
+            if (!current) {
                 FileUtil.deleteRecursively(copy);
                 FileUtil.copyRecursively(runtime, copy);
                 try (var list = Files.list(dlls)) {
@@ -52,8 +62,26 @@ public final class MesaGl {
                 }
                 Files.writeString(marker, dlls.toString());
             }
+            CHECKED.add(copy.toAbsolutePath());
             return copy.resolve("bin").resolve(javaExe.getFileName().toString());
         });
+    }
+
+    /** True if every file of {@code runtime} exists in {@code copy} with the same content (Mesa's DLLs aside). */
+    static boolean sameFiles(Path runtime, Path copy, Path dlls) throws IOException {
+        Set<String> mesa = new HashSet<>();
+        try (var list = Files.list(dlls)) {
+            list.forEach(d -> mesa.add(d.getFileName().toString()));
+        }
+        try (var files = Files.walk(runtime)) {
+            for (Path f : (Iterable<Path>) files.filter(Files::isRegularFile)::iterator) {
+                String name = f.getFileName().toString();
+                if (name.startsWith(".verity-") || mesa.contains(name)) continue;
+                Path other = copy.resolve(runtime.relativize(f).toString());
+                if (!Files.isRegularFile(other) || Files.mismatch(f, other) != -1) return false;
+            }
+        }
+        return true;
     }
 
     Path ensureDlls(Progress progress) throws Exception {

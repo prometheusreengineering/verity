@@ -58,4 +58,25 @@ class MesaGlTest {
         }
         assertThatThrownBy(() -> MesaGl.copyGlDlls(tmp.resolve("nope"), out)).isInstanceOf(IOException.class);
     }
+
+    @Test
+    void runtimeCopyWithATornFileIsNotTheSame() throws Exception {
+        Path dlls = Files.createDirectories(tmp.resolve("mesa"));
+        Files.writeString(dlls.resolve("opengl32.dll"), "mesa");
+        Path runtime = Files.createDirectories(tmp.resolve("rt/lib"));
+        Files.writeString(runtime.resolve("modules"), "classes");
+        Files.writeString(runtime.resolveSibling(".verity-complete"), "17");
+        Path copy = Files.createDirectories(tmp.resolve("rt-mesa/lib"));
+        Files.writeString(copy.resolve("modules"), "classes");
+        Files.createDirectories(tmp.resolve("rt-mesa/bin"));
+        Files.writeString(tmp.resolve("rt-mesa/bin/opengl32.dll"), "mesa");
+        Path rt = tmp.resolve("rt");
+        Path rtMesa = tmp.resolve("rt-mesa");
+
+        assertThat(MesaGl.sameFiles(rt, rtMesa, dlls)).isTrue();
+        Files.write(copy.resolve("modules"), new byte[7]); // same size, zeroed
+        assertThat(MesaGl.sameFiles(rt, rtMesa, dlls)).isFalse();
+        Files.delete(copy.resolve("modules"));
+        assertThat(MesaGl.sameFiles(rt, rtMesa, dlls)).isFalse();
+    }
 }

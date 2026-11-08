@@ -17,6 +17,8 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -30,6 +32,9 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 public final class JavaRuntimeManager {
     public static final String MOJANG_RUNTIMES =
             "https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
+
+    /** Runtime directories checked against their manifest in this process. */
+    private static final Set<Path> VERIFIED = ConcurrentHashMap.newKeySet();
 
     private final InstallContext ctx;
 
@@ -94,14 +99,25 @@ public final class JavaRuntimeManager {
     private Path installMojang(String component, String platform, Progress progress) throws IOException {
         Path dir = runtimeDir(component, platform);
         Path marker = dir.resolve(".verity-complete");
-        if (Files.isRegularFile(marker)) return executableIn(dir);
+        if (VERIFIED.contains(dir.toAbsolutePath())) return executableIn(dir);
+        // An installed runtime is still checked against its manifest once per process: a crash or power loss can leave
+        // files at the right size but zeroed (seen with lib/modules), which makes the JVM die with heap corruption as
+        // soon as it loads a class. The downloader hashes existing files and fetches only the ones that differ.
+        boolean installed = Files.isRegularFile(marker);
 
-        JsonNode all = Json.tree(ctx.cache().get(MOJANG_RUNTIMES));
-        JsonNode entries = all.path(platform).path(component);
-        if (!entries.isArray() || entries.isEmpty()) return null;
-        JsonNode manifestRef = entries.get(0).path("manifest");
-        progress.stage("Downloading Java runtime " + component + " (" + entries.get(0).path("version").path("name").asText() + ")");
-        JsonNode manifest = Json.tree(ctx.cache().getImmutable(manifestRef.path("url").asText()));
+        JsonNode entries;
+        JsonNode manifest;
+        try {
+            JsonNode all = Json.tree(ctx.cache().get(MOJANG_RUNTIMES));
+            entries = all.path(platform).path(component);
+            if (!entries.isArray() || entries.isEmpty()) return installed ? executableIn(dir) : null;
+            manifest = Json.tree(ctx.cache().getImmutable(entries.get(0).path("manifest").path("url").asText()));
+        } catch (IOException e) {
+            if (installed) return executableIn(dir); // offline with nothing cached: trust the earlier install
+            throw e;
+        }
+        String name = entries.get(0).path("version").path("name").asText();
+        progress.stage((installed ? "Checking Java runtime " : "Downloading Java runtime ") + component + " (" + name + ")");
 
         List<Downloader.Artifact> files = new ArrayList<>();
         List<Map.Entry<Path, String>> links = new ArrayList<>();
@@ -137,7 +153,8 @@ public final class JavaRuntimeManager {
                 if (Files.isRegularFile(resolved)) Files.copy(resolved, link.getKey(), StandardCopyOption.REPLACE_EXISTING);
             }
         }
-        Files.writeString(marker, entries.get(0).path("version").path("name").asText());
+        Files.writeString(marker, name);
+        VERIFIED.add(dir.toAbsolutePath());
         return executableIn(dir);
     }
 

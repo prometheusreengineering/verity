@@ -70,7 +70,8 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
   failed.
 - Cached files can be torn by a crash or power loss: right size, garbage content. Installer jars have no checksum
   (they're re-downloaded if they don't open as a zip), and child jars and installer-extracted libraries are compared
-  by content, not size.
+  by content, not size. Java runtimes are re-hashed against Mojang's manifest once per process (a zeroed `lib/modules`
+  makes every processor die with heap corruption), and Windows Mesa runtime copies are compared with their source.
 - Child version jars are copied to `versions/<id>/<id>.jar`, because Forge's `ignoreList` relies on `${version_name}.jar`.
 - Windows: Mesa (mesa-dist-win) is unpacked with 7-Zip (`7z.exe` or a downloaded `7zr.exe`), because the archives use
   BCJ2, which commons-compress can't decode. Some releases ship builds without OpenGL (26.2.6 MSVC), so `MesaGl`
