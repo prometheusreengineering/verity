@@ -78,6 +78,7 @@ jobs:
         uses: ./
         with:
           mode: plan
+          os: linux,windows
           profile: samples/testmod/verity-all.json
           jar: ${{ steps.jars.outputs.cli }}
           only: ${{ inputs.only }}

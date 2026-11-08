@@ -44,17 +44,30 @@ final class MainMenuWatcher {
         VANILLA_1_14 = Collections.unmodifiableMap(m);
     }
 
-    /** How long {@code run()} must stay off its init call before the loop counts as running (vanilla before 1.14). */
+    /** How long a call under {@code Main.main} must stay on the stack to count as {@code Minecraft.run()}. */
+    static final long RUN_SETTLE_MS = 1000;
+    /** How long {@code run()} must stay off its init call before the loop counts as running (1.7.10-1.12.2). */
     static final long LOOP_SETTLE_MS = 2000;
 
-    private final Set<String> obfuscated = new HashSet<String>();
-    private final boolean loopRule;
+    /** How old vanilla reaches its main menu, with no names to go by. */
+    enum LoopRule {
+        /** Not used: the title screen's name is known. */
+        NONE,
+        /** 1.13.x: the constructor loads everything, so the menu is up once {@code run()} is running. */
+        RUN,
+        /** 1.7.10-1.12.2: {@code run()} calls {@code startGame()}, which ends by opening the menu, then loops. */
+        RUN_LEFT_INIT
+    }
 
+    private final Set<String> obfuscated = new HashSet<String>();
+    private final LoopRule loopRule;
+
+    private String run;
+    private long runSince = -1;
     private String initCall;
     private long lastInitSeen = -1;
-    private boolean leftInit;
 
-    private MainMenuWatcher(Set<String> obfuscated, boolean loopRule) {
+    private MainMenuWatcher(Set<String> obfuscated, LoopRule loopRule) {
         this.obfuscated.addAll(obfuscated);
         this.loopRule = loopRule;
     }
@@ -80,12 +93,23 @@ final class MainMenuWatcher {
             if (fromMappings != null) obf.add(fromMappings);
             else if (VANILLA_1_14.containsKey(mc)) obf.add(VANILLA_1_14.get(mc));
         }
-        // Vanilla with no known name: before 1.14 (no mappings, synchronous loading).
-        return new MainMenuWatcher(obf, vanilla && obf.isEmpty());
+        // Vanilla before 1.14 has no mappings and loads synchronously. Later vanilla without mappings (26.x) isn't
+        // obfuscated, so its TitleScreen matches by name.
+        LoopRule rule = LoopRule.NONE;
+        int minor = minorOf(mc);
+        if (vanilla && obf.isEmpty() && minor >= 0 && minor < 14) rule = minor == 13 ? LoopRule.RUN : LoopRule.RUN_LEFT_INIT;
+        return new MainMenuWatcher(obf, rule);
     }
 
-    static MainMenuWatcher of(Set<String> obfuscated, boolean loopRule) {
-        return new MainMenuWatcher(obfuscated, loopRule);
+    /** The minor version of a {@code 1.x[.y]} version, or -1 for anything else (e.g. 26.1). */
+    static int minorOf(String mc) {
+        String[] p = mc.split("\\.");
+        if (p.length < 2 || !p[0].equals("1")) return -1;
+        try {
+            return Integer.parseInt(p[1]);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     /** The obfuscated name of Mojang's {@code TitleScreen} in a ProGuard mappings file, or null. */
@@ -123,28 +147,40 @@ final class MainMenuWatcher {
             String simple = simpleName(cls);
             if (NAMED.contains(simple) || obfuscated.contains(simple)) return "title screen " + cls;
         }
-        if (!loopRule || main < 2) return null;
-        StackTraceElement run = stack[main - 1];
-        if ("<init>".equals(run.getMethodName())) return null;
-        String call = stack[main - 2].getClassName() + "." + stack[main - 2].getMethodName();
-        if (initCall == null) initCall = call;
-        if (call.equals(initCall)) {
+        if (loopRule == LoopRule.NONE || main < 1) return null;
+
+        // Minecraft.run(): a method (not a constructor or static init) of an obfuscated game class, which before 1.14
+        // all sit in the default package, unlike every library, that Main.main stays in.
+        StackTraceElement top = stack[main - 1];
+        String call = top.getClassName() + "." + top.getMethodName();
+        boolean gameMethod = top.getClassName().indexOf('.') < 0 && !top.getMethodName().startsWith("<");
+        if (!gameMethod || !call.equals(run)) {
+            run = gameMethod ? call : null;
+            runSince = gameMethod ? nowMillis : -1;
+            initCall = null;
+            lastInitSeen = -1;
+            return null;
+        }
+        if (nowMillis - runSince < RUN_SETTLE_MS) return null;
+        if (loopRule == LoopRule.RUN) return "game loop running (" + run + ")";
+
+        if (main < 2) return null;
+        String callee = stack[main - 2].getClassName() + "." + stack[main - 2].getMethodName();
+        if (initCall == null) initCall = callee;
+        if (callee.equals(initCall)) {
             lastInitSeen = nowMillis;
             return null;
         }
-        leftInit = true;
-        if (lastInitSeen >= 0 && nowMillis - lastInitSeen >= LOOP_SETTLE_MS) {
-            return "game loop running (" + run.getClassName() + "." + run.getMethodName() + " left " + initCall + ")";
-        }
+        if (nowMillis - lastInitSeen >= LOOP_SETTLE_MS) return "game loop running (" + run + " left " + initCall + ")";
         return null;
     }
 
-    boolean usesLoopRule() {
+    LoopRule loopRule() {
         return loopRule;
     }
 
-    boolean leftInit() {
-        return leftInit;
+    boolean usesLoopRule() {
+        return loopRule != LoopRule.NONE;
     }
 
     Set<String> obfuscatedNames() {

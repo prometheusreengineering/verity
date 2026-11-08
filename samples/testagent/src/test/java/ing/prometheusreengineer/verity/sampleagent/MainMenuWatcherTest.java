@@ -65,25 +65,50 @@ class MainMenuWatcherTest {
         assertThat(MainMenuWatcher.titleScreenIn(new BufferedReader(new StringReader("a -> b:\n")))).isNull();
     }
 
+    static final String MAIN = "net.minecraft.client.main.Main.main";
+
     @Test
-    void oldVanillaCountsTheGameLoopOnceRunHasLeftItsInitCall() throws Exception {
+    void vanillaBefore113WaitsForRunToLeaveStartGame() throws Exception {
         MainMenuWatcher w = MainMenuWatcher.forTarget("1.12.2-vanilla", null);
-        assertThat(w.usesLoopRule()).isTrue();
-        String main = "net.minecraft.client.main.Main.main";
-        // Constructing Minecraft isn't run() yet.
-        assertThat(w.sample(stack("bib.<init>", main), 0)).isNull();
-        // run() -> startGame (init), several times, then the loop.
-        assertThat(w.sample(stack("cgf.a", "bib.am", "bib.a", main), 100)).isNull();
-        assertThat(w.sample(stack("cgg.b", "bib.am", "bib.a", main), 3000)).isNull();
-        assertThat(w.sample(stack("org.lwjgl.opengl.Display.update", "bib.az", "bib.a", main), 3100)).isNull();
-        assertThat(w.sample(stack("bib.az", "bib.a", main), 4000)).isNull(); // under 2 s since init was last seen
-        assertThat(w.sample(stack("bib.az", "bib.a", main), 5100)).contains("game loop running");
+        assertThat(w.loopRule()).isEqualTo(MainMenuWatcher.LoopRule.RUN_LEFT_INIT);
+        // What 1.12.2 really does first (from a CI trace): class loading, Minecraft's static init, argument parsing,
+        // the constructor. None of it is run().
+        assertThat(w.sample(stack("java.lang.ClassLoader.loadClass", MAIN), 0)).isNull();
+        assertThat(w.sample(stack("org.apache.logging.log4j.LogManager.getLogger", "bib.<clinit>", MAIN), 1000)).isNull();
+        assertThat(w.sample(stack("joptsimple.OptionParser.acceptsAll", MAIN), 2000)).isNull();
+        assertThat(w.sample(stack("bib.<init>", MAIN), 3000)).isNull();
+        assertThat(w.sample(stack("bib.<init>", MAIN), 6000)).isNull();
+        // run() -> startGame for a while, then the loop.
+        assertThat(w.sample(stack("cgf.a", "bib.am", "bib.a", MAIN), 6100)).isNull();
+        assertThat(w.sample(stack("cgg.b", "bib.am", "bib.a", MAIN), 9000)).isNull();
+        assertThat(w.sample(stack("org.lwjgl.opengl.Display.update", "bib.az", "bib.a", MAIN), 9100)).isNull();
+        assertThat(w.sample(stack("bib.az", "bib.a", MAIN), 10_000)).isNull(); // under 2 s since startGame was seen
+        assertThat(w.sample(stack("bib.az", "bib.a", MAIN), 11_200)).contains("game loop running").contains("bib.a");
     }
 
     @Test
-    void loaderTargetsNeverUseTheLoopRule() throws Exception {
-        for (String t : Set.of("1.12.2-forge", "1.7.10-forge", "1.20.1-fabric", "1.20.6-neoforge")) {
+    void vanilla113IsAtTheMenuOnceRunIsRunning() throws Exception {
+        MainMenuWatcher w = MainMenuWatcher.forTarget("1.13.2-vanilla", null);
+        assertThat(w.loopRule()).isEqualTo(MainMenuWatcher.LoopRule.RUN);
+        // 1.13 loads everything in the constructor (CI trace: cft.<init> > pf.c > ...).
+        assertThat(w.sample(stack("joptsimple.OptionParser.acceptsAll", MAIN), 0)).isNull();
+        assertThat(w.sample(stack("pf.c", "cft.<init>", MAIN), 1000)).isNull();
+        assertThat(w.sample(stack("pf.c", "cft.<init>", MAIN), 9000)).isNull();
+        assertThat(w.sample(stack("cft.b", "cft.a", MAIN), 9100)).isNull(); // run() not settled yet
+        assertThat(w.sample(stack("cft.b", "cft.a", MAIN), 10_200)).contains("game loop running (cft.a)");
+    }
+
+    @Test
+    void onlyOldVanillaUsesTheLoopRule() throws Exception {
+        for (String t : Set.of("1.12.2-forge", "1.7.10-forge", "1.13.2-forge", "1.20.1-fabric", "1.20.6-neoforge",
+                "26.1.2-vanilla", "26.3-vanilla", "1.14.4-vanilla", "1.14-vanilla")) {
             assertThat(MainMenuWatcher.forTarget(t, null).usesLoopRule()).as(t).isFalse();
         }
+        // 26.x vanilla isn't obfuscated: found by name, even with no mappings.
+        assertThat(MainMenuWatcher.forTarget("26.3-vanilla", null).sample(stack(
+                "net.minecraft.client.gui.screens.TitleScreen.render", "net.minecraft.client.Minecraft.run", MAIN), 0))
+                .contains("TitleScreen");
+        assertThat(MainMenuWatcher.minorOf("1.8.9")).isEqualTo(8);
+        assertThat(MainMenuWatcher.minorOf("26.1")).isEqualTo(-1);
     }
 }

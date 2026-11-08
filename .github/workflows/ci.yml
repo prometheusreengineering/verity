@@ -82,6 +82,7 @@ jobs:
         uses: ./
         with:
           mode: plan
+          os: linux,windows
           profile: samples/testmod/verity.json
           jar: ${{ steps.jars.outputs.cli }}
           # Leaves runners for other workflows; the planner picks 10 for this profile anyway.
