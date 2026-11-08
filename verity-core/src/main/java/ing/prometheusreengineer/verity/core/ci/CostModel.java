@@ -156,14 +156,15 @@ public final class CostModel {
     /**
      * Estimated size of the shared cache (game files, libraries, installers) for {@code targets}. Rough: each Minecraft
      * version's client jar and libraries, each processor-based install's generated jars, and one set of assets, which
-     * neighbouring versions mostly share. Corrected by {@link #scaleSizes} from caches that exist.
+     * neighbouring versions mostly share. Fitted to the 127-target caches measured on 2026-11-07, and corrected by
+     * {@link #scaleSizes} from caches that exist.
      */
     public long sharedBytes(List<Target> targets) {
         Set<String> versions = new HashSet<>();
-        double bytes = 400 * MB;
+        double bytes = 270 * MB;
         for (Target t : targets) {
-            if (versions.add(t.minecraft())) bytes += 60 * MB;
-            bytes += processorBased(t) ? 70 * MB : t.loader() == LoaderType.FORGE ? 20 * MB : 10 * MB;
+            if (versions.add(t.minecraft())) bytes += 40 * MB;
+            bytes += processorBased(t) ? 50 * MB : t.loader() == LoaderType.FORGE ? 15 * MB : 7 * MB;
         }
         return (long) (bytes * sizeScale);
     }
@@ -175,7 +176,7 @@ public final class CostModel {
             runtimes.add(javaFamily(t.minecraft()));
             if (processorBased(t)) runtimes.add("17");
         }
-        double bytes = os == CiOs.WINDOWS ? 300 * MB + runtimes.size() * 200 * MB : 80 * MB + runtimes.size() * 100 * MB;
+        double bytes = os == CiOs.WINDOWS ? 140 * MB + runtimes.size() * 95 * MB : 40 * MB + runtimes.size() * 50 * MB;
         return (long) (bytes * sizeScale);
     }
 
