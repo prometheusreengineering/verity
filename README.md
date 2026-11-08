@@ -254,7 +254,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mvn -B package            # build your mod
-      - uses: prometheusreengineering/verity@v0.1.1
+      - uses: prometheusreengineering/verity@v1
         with:
           profile: verity.json
           # only: "1.8.9,1.20.1-fabric"
@@ -263,7 +263,8 @@ jobs:
 
 The action installs Xvfb/Mesa on Linux, caches the Minecraft/loader/Java downloads between workflow runs, writes a
 results table to the job summary, uploads the reports as an artifact, and fails the job if any target fails.
-On Windows it also turns off Defender's real-time scanning for the job, which otherwise scans every file the cache
+It runs the Verity release it was used at: `@v1` takes the newest 1.x.y, `@v1.0.0` exactly that one (override with
+`version`, or point `jar` at your own build). On Windows it also turns off Defender's real-time scanning for the job, which otherwise scans every file the cache
 restores; set `defender: keep` on self-hosted runners. `.github/workflows/ci.yml` runs Verity's own end-to-end matrix
 with the sample agent and mod (`samples/testmod/verity.json`), and `all-targets.yml` runs every version nightly.
 
@@ -285,7 +286,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mvn -B package            # the profile's mods must exist
-      - uses: prometheusreengineering/verity@v0.1.1
+      - uses: prometheusreengineering/verity@v1
         with:
           mode: prepare
           profile: verity.json
@@ -299,7 +300,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mvn -B package
-      - uses: prometheusreengineering/verity@v0.1.1
+      - uses: prometheusreengineering/verity@v1
         with:
           profile: verity.json
           only: ${{ matrix.loader }}
@@ -314,7 +315,7 @@ and works from the current target list, so it keeps up with profiles that select
       matrix:
         shard: [1, 2, 3, 4, 5, 6]
     steps:
-      - uses: prometheusreengineering/verity@v0.1.1
+      - uses: prometheusreengineering/verity@v1
         with:
           profile: verity.json
           shard: ${{ matrix.shard }}/6
@@ -344,7 +345,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: plan
-        uses: prometheusreengineering/verity@v0.2.0
+        uses: prometheusreengineering/verity@v1
         with:
           mode: plan
           profile: verity.json
@@ -361,7 +362,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mvn -B package            # the profile's mods must exist
-      - uses: prometheusreengineering/verity@v0.2.0
+      - uses: prometheusreengineering/verity@v1
         with:
           profile: verity.json
           job: ${{ toJSON(matrix) }}
@@ -377,7 +378,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mvn -B package
-      - uses: prometheusreengineering/verity@v0.2.0
+      - uses: prometheusreengineering/verity@v1
         with:
           profile: verity.json
           job: ${{ toJSON(matrix) }}

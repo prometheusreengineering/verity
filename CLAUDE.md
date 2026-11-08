@@ -23,9 +23,11 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
   are where launcher bugs hide. Locally, keep `-p` at about 3; each client plus Mesa takes several GB. Cloud sandboxes usually can't reach
   Mojang/Fabric/Forge/NeoForge hosts, so check CI logs (GitHub MCP `get_job_logs`) to verify real launches.
 - Maven Central sometimes returns HTTP 429. Retry with `--max-workers=2` and a short backoff.
-- Pushing a `v*` tag releases: `release.yml` takes the version from the tag, deploys `verity-api` to
-  `prometheusreengineering/maven` (needs the `MAVEN_REPO_DEPLOY_KEY` secret) and GitHub Packages, then creates the
-  GitHub release that `action.yml` downloads from.
+- Pushing a `vX.Y.Z` tag releases: `release.yml` takes the version from the tag, deploys `verity-api` to
+  `prometheusreengineering/maven` (needs the `MAVEN_REPO_DEPLOY_KEY` secret) and GitHub Packages, creates the
+  GitHub release that `action.yml` downloads from, then moves the major tag (`v1`) to it unless it's a pre-release.
+  The action runs the CLI of the ref it was used at (`@v1.0.0` exactly, `@v1` the newest 1.x.y, else latest), read
+  from `github.action_path`, so a pinned action never runs a CLI from a later, incompatible release.
 - `action.yml` caches: one shared across OSes plus one per OS, keyed by a line-ending-free profile hash (`hashFiles` sees
   CRLF on Windows) and the week. Keep the cache's `path` lists identical everywhere, as they're part of its identity. A
   matched directory goes to tar whole, ignoring exclusions in it, so libraries are matched by file type. The installer

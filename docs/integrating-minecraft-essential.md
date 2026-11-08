@@ -25,7 +25,7 @@ change is tested on all of them at once.
 <dependency>
   <groupId>ing.prometheusreengineer.verity</groupId>
   <artifactId>verity-api</artifactId>
-  <version>0.1.0</version>
+  <version>1.0.0</version>
 </dependency>
 ...
 <plugin>
@@ -132,7 +132,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "8" }
       - run: mvn -B -q package
-      - uses: prometheusreengineering/verity@v0.1.1
+      - uses: prometheusreengineering/verity@v1
         env:
           VERITY_MSA_REFRESH_TOKEN: ${{ secrets.VERITY_MSA_REFRESH_TOKEN }}
         with:

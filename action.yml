@@ -53,9 +53,12 @@ inputs:
     required: false
     default: verity-report
   version:
-    description: Verity release to use (tag, e.g. v0.1.0, or "latest"). Ignored when "jar" is set.
+    description: >
+      Verity release to use (a tag such as v1.0.0, or "latest"). By default, the release this action was used at:
+      @v1.0.0 runs v1.0.0, @v1 the newest v1.x.y release, and a branch or commit the latest release. Ignored when
+      "jar" is set.
     required: false
-    default: latest
+    default: ""
   jar:
     description: Path to a Verity CLI jar to use instead of downloading a release.
     required: false
@@ -310,16 +313,35 @@ runs:
         GH_TOKEN: ${{ github.token }}
         INPUT_JAR: ${{ inputs.jar }}
         INPUT_VERSION: ${{ inputs.version }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         if [ -n "$INPUT_JAR" ]; then
           echo "path=$INPUT_JAR" >> "$GITHUB_OUTPUT"
           exit 0
         fi
+        repo=prometheusreengineering/verity
+        version="$INPUT_VERSION"
+        if [ -z "$version" ]; then
+          # The ref the action was used at is the last part of its path (github.action_ref is often empty in
+          # composite actions). A CLI from another release may not match this action.yml.
+          ref="$(basename "$(printf '%s' "$ACTION_PATH" | tr '\\\\' '/')")"
+          if [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            version="$ref"
+          elif [[ "$ref" =~ ^v[0-9]+(\.[0-9]+)?$ ]]; then
+            # A moving major (or minor) tag: the newest release under it.
+            version="$(gh release list --repo "$repo" --exclude-drafts --exclude-pre-releases --limit 100 \
+              --json tagName --jq '.[].tagName' | grep -E "^${ref//./\\.}\.[0-9]" | sort -V | tail -n 1 || true)"
+            [ -n "$version" ] || { echo "::error::No release under $ref."; exit 1; }
+          else
+            version=latest
+          fi
+        fi
+        echo "Verity CLI: $version"
         dest="$RUNNER_TEMP/verity-cli.jar"
-        if [ "$INPUT_VERSION" = "latest" ]; then
-          gh release download --repo prometheusreengineering/verity --pattern 'verity-cli*.jar' --output "$dest" --clobber
+        if [ "$version" = "latest" ]; then
+          gh release download --repo "$repo" --pattern 'verity-cli*.jar' --output "$dest" --clobber
         else
-          gh release download "$INPUT_VERSION" --repo prometheusreengineering/verity --pattern 'verity-cli*.jar' --output "$dest" --clobber
+          gh release download "$version" --repo "$repo" --pattern 'verity-cli*.jar' --output "$dest" --clobber
         fi
         echo "path=$dest" >> "$GITHUB_OUTPUT"
 

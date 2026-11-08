@@ -12,7 +12,13 @@ import java.util.Map;
 
 /** Thin wrapper around {@link HttpClient} with Verity's defaults (proxy, redirects, timeouts, user agent). */
 public final class Http {
-    public static final String USER_AGENT = "Verity/0.1 (+https://github.com/prometheusreengineering/verity)";
+    /** The version comes from the manifest of the jar Verity runs from (the CLI's shadow jar); "dev" in a build tree. */
+    public static final String USER_AGENT = "Verity/" + version() + " (+https://github.com/prometheusreengineering/verity)";
+
+    private static String version() {
+        String v = Http.class.getPackage().getImplementationVersion();
+        return v != null ? v : "dev";
+    }
 
     private final HttpClient client;
 

@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    # Full versions only: the moving major tag (v1) that the release job pushes must not release again.
+    tags: ["v*.*.*"]
 
 concurrency:
   group: release
@@ -97,3 +98,12 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+      # Actions users pin @v1; the action then runs the newest v1.x.y CLI. Pre-releases (v1.1.0-rc1) don't move it.
+      - uses: actions/checkout@v4
+        if: ${{ !contains(github.ref_name, '-') }}
+      - name: Move the major tag
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"
+          git tag -f "$major" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$major"
