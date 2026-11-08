@@ -39,7 +39,9 @@ removes or renames one, since people parse them.
    2. deploys `verity-api` to `prometheusreengineering/maven` and GitHub Packages;
    3. creates the GitHub release with `verity-cli.jar` and `verity-api-<version>.jar`, plus generated notes, and
       marks it as the latest release if it's the highest version;
-   4. moves the major tag (`v1`) to the release, so `prometheusreengineering/verity@v1` picks it up.
+   4. moves the major tag (`v1`) to the release, so `prometheusreengineering/verity@v1` picks it up. If GitHub
+      refuses to let the job's token move it, the step leaves a warning with the command to run yourself; the
+      release is complete apart from that.
 4. Edit the release on GitHub and rewrite the generated notes. They only list merged PRs, so they miss commits pushed
    to `main` directly. Group changes under **Breaking changes**, **New**, **Fixes** and **Known issues**.
 5. Check it worked: in any workflow that uses `prometheusreengineering/verity@v1` (no `jar` input), the **Get Verity**

@@ -111,9 +111,22 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           make_latest: ${{ steps.latest.outputs.make }}
       # Actions users pin @v1; the action then runs the newest v1.x.y CLI. Pre-releases (v1.1.0-rc1) don't move it.
+      # Through the REST API: GitHub refuses a git push of a ref that brings in workflow files from the job's token
+      # ("without `workflows` permission"). If the API refuses too, the release still stands; move the tag by hand.
       - name: Move the major tag
         if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           major="${GITHUB_REF_NAME%%.*}"
-          git tag -f "$major" "$GITHUB_SHA"
-          git push -f origin "refs/tags/$major"
+          refs="repos/$GITHUB_REPOSITORY/git/refs"
+          if gh api "$refs/tags/$major" --silent 2>/dev/null; then
+            ok=$(gh api -X PATCH "$refs/tags/$major" -f sha="$GITHUB_SHA" -F force=true --silent && echo yes || echo no)
+          else
+            ok=$(gh api -X POST "$refs" -f ref="refs/tags/$major" -f sha="$GITHUB_SHA" --silent && echo yes || echo no)
+          fi
+          if [ "$ok" = yes ]; then
+            echo "Moved $major to $GITHUB_REF_NAME."
+          else
+            echo "::warning::Couldn't move $major to $GITHUB_REF_NAME. Run: git fetch --tags && git tag -f $major $GITHUB_SHA && git push -f origin refs/tags/$major"
+          fi
