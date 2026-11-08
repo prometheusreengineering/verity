@@ -14,7 +14,7 @@ on:
     paths:
       - .github/workflows/full-matrix.yml
       - samples/testmod/verity-full.json
-      - verity-core/src/main/java/dev/verity/core/display/**
+      - verity-core/src/main/java/ing/prometheusreengineer/verity/core/display/**
   workflow_dispatch:
     inputs:
       loader:
