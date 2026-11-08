@@ -2,7 +2,6 @@ package ing.prometheusreengineer.verity.sampleagent;
 
 import ing.prometheusreengineer.verity.api.Verity;
 import java.lang.instrument.Instrumentation;
-import java.util.Map;
 
 /**
  * Attached with {@code -javaagent} (a profile mod entry with {@code "agent": true}). Waits for the game's main menu by
@@ -54,14 +53,19 @@ public final class AgentEntry {
                     + (watcher.usesLoopRule() ? " or the game loop" : ""));
         }
 
+        // Stack walks pause the thread they walk, so keep them rare: Windows clients crashed natively (no hs_err)
+        // during early startup while this sampled every 50 ms and walked every thread until it found the right one.
+        long interval = Integer.getInteger("verity.sample.interval", 250);
         Thread render = null;
+        long lastSearch = 0;
         String found = null;
         String lastChain = null;
         long lastTrace = 0;
         StackTraceElement[] stack = new StackTraceElement[0];
         while (System.currentTimeMillis() < deadline) {
-            if (render == null || !render.isAlive()) {
+            if ((render == null || !render.isAlive()) && System.currentTimeMillis() - lastSearch >= 1000) {
                 render = findRenderThread();
+                lastSearch = System.currentTimeMillis();
             }
             if (render != null) {
                 stack = render.getStackTrace();
@@ -77,7 +81,7 @@ public final class AgentEntry {
                 }
                 if (found != null) break;
             }
-            sleep(50);
+            sleep(interval);
         }
 
         double secs = (System.currentTimeMillis() - start) / 1000.0;
@@ -101,10 +105,23 @@ public final class AgentEntry {
         Verity.finish();
     }
 
-    /** The thread running {@code net.minecraft.client.main.Main.main}, or null if there is none yet. */
+    /** Names Minecraft gives the thread that runs {@code Main.main}: the JVM's, then 1.7.10-1.13's and 1.14+'s. */
+    static final java.util.Set<String> RENDER_NAMES = new java.util.HashSet<String>(
+            java.util.Arrays.asList("main", "Client thread", "Render thread"));
+
+    /**
+     * The thread running {@code net.minecraft.client.main.Main.main}, or null if there is none yet. Lists threads
+     * without their stacks and walks only the few with a render thread's name.
+     */
     static Thread findRenderThread() {
-        for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
-            if (MainMenuWatcher.mainIndex(e.getValue()) >= 0) return e.getKey();
+        ThreadGroup root = Thread.currentThread().getThreadGroup();
+        while (root.getParent() != null) root = root.getParent();
+        Thread[] threads = new Thread[root.activeCount() + 16];
+        int n = root.enumerate(threads, true);
+        for (int i = 0; i < n; i++) {
+            Thread t = threads[i];
+            if (t == null || !RENDER_NAMES.contains(t.getName())) continue;
+            if (MainMenuWatcher.mainIndex(t.getStackTrace()) >= 0) return t;
         }
         return null;
     }
