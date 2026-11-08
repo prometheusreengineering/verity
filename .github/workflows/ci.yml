@@ -4,7 +4,15 @@ on:
   push:
     # Not tags: release.yml covers them, and a tag's cache can't be restored by anything else.
     branches: [main]
+    paths-ignore: &unaffected
+      # Nothing the build, tests or e2e run read. The other workflows don't affect this one either.
+      - "**.md"
+      - docs/**
+      - LICENSE
+      - .github/workflows/all-targets.yml
+      - .github/workflows/release.yml
   pull_request:
+    paths-ignore: *unaffected
   workflow_dispatch:
     inputs:
       e2e:
