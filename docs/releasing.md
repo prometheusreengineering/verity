@@ -22,34 +22,6 @@ Verity follows semantic versioning. Users depend on four things, and a release t
 A change to the reports (`report.json`, JUnit, HTML) counts as minor if it only adds fields, and as major if it
 removes or renames one, since people parse them.
 
-## Cutting a release
-
-1. Make sure CI is green on the `main` commit you're releasing. For anything bigger than a small patch, also run
-   **All targets** (Actions → All targets → Run workflow) and wait for it to pass.
-2. Tag and push:
-
-   ```bash
-   git switch main && git pull
-   git tag v1.2.0
-   git push origin v1.2.0
-   ```
-
-3. Watch the **Release** workflow. It:
-   1. builds and tests on Linux and Windows, with the version taken from the tag (`gradle.properties` is ignored);
-   2. deploys `verity-api` to `prometheusreengineering/maven` and GitHub Packages;
-   3. creates the GitHub release with `verity-cli.jar` and `verity-api-<version>.jar`, plus generated notes, and
-      marks it as the latest release if it's the highest version;
-   4. moves the major tag (`v1`) to the release, so `prometheusreengineering/verity@v1` picks it up. If GitHub
-      refuses to let the job's token move it, the step leaves a warning with the command to run yourself; the
-      release is complete apart from that.
-4. Edit the release on GitHub and rewrite the generated notes. They only list merged PRs, so they miss commits pushed
-   to `main` directly. Group changes under **Breaking changes**, **New**, **Fixes** and **Known issues**.
-5. Check it worked: in any workflow that uses `prometheusreengineering/verity@v1` (no `jar` input), the **Get Verity**
-   step should print `Verity CLI: v1.2.0`.
-
-You don't need to bump `gradle.properties`. It only names local builds (`1.0.0-SNAPSHOT`), and you can bump it
-whenever convenient.
-
 ### Patch
 
 Tag `vX.Y.(Z+1)` as above. Users on `@v1` get it on their next run, and users pinned to `@v1.Y.Z` stay where they are.
@@ -92,24 +64,3 @@ The action downloads the CLI from the release matching the ref it was used at:
 
 This is why a pinned action keeps working: `@v1.0.0` never runs a CLI from a later release that its `action.yml`
 doesn't know about. Releases before 1.0.0 always took the latest CLI.
-
-## When a release fails
-
-- **Build or tests fail:** nothing was published. Delete the tag, fix the problem on `main`, then tag again:
-
-  ```bash
-  git push origin :refs/tags/v1.2.0 && git tag -d v1.2.0
-  ```
-
-- **The deploy or release job fails:** use **Re-run failed jobs**, not "Re-run all jobs". The Maven repository
-  step skips a version that's already there, but GitHub Packages rejects a version it already has, so a full re-run
-  fails once the publish job has succeeded.
-- **A bad release went out:** don't move or delete its tag, since people may have pinned it. Fix the problem and
-  release the next patch. If it's harmful, mark the GitHub release as a pre-release so `@v1` and "latest" skip it,
-  and then make sure `v1` points at the previous good release:
-
-  ```bash
-  git tag -f v1 v1.1.0 && git push -f origin refs/tags/v1
-  ```
-
-Never push a moving tag (`v1`) by hand except to repair it like this. The release job owns it.
