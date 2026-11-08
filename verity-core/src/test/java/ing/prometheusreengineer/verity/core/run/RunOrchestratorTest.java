@@ -314,6 +314,23 @@ class RunOrchestratorTest {
     }
 
     @Test
+    void theGameDoesNotInheritVerityCredentials() throws Exception {
+        // The test task puts a VERITY_MSA_REFRESH_TOKEN into this JVM's environment; the game runs the code under test.
+        assertThat(System.getenv("VERITY_MSA_REFRESH_TOKEN")).as("set by the test task").isNotNull();
+        VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
+        Profile p = fakeProfile(home, "fake-env");
+        RunOptions opts = new RunOptions();
+        opts.displayProvider = NO_DISPLAY;
+        opts.reportDir = tmp.resolve("report");
+        RunReport report = new RunOrchestrator(context(home)).start(p, opts, new RunListener() {
+        }).report().get(120, TimeUnit.SECONDS);
+
+        TargetResult r = report.results.get(0);
+        assertThat(r.status).as(r.message).isEqualTo(Status.PASSED);
+        assertThat(r.checks).extracting(CheckResult::name).containsExactly("no credentials");
+    }
+
+    @Test
     void aNativeCrashWithoutACrashReportIsRetriedOnce() throws Exception {
         VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
         Profile p = fakeProfile(home, "fake-flaky", "fake-crash");

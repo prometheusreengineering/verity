@@ -83,8 +83,8 @@ public final class Win32HiddenDesktop implements DisplayProvider {
             si.hStdOutput = out;
             si.hStdError = out;
             Win32.ProcessInformation pi = new Win32.ProcessInformation();
-            Map<String, String> env = new HashMap<>(System.getenv());
-            env.putAll(spec.environment());
+            // The game runs the code under test, which must not see Verity's credentials.
+            Map<String, String> env = GameEnvironment.of(System.getenv(), spec.environment());
             char[] cmd = (Win32.commandLine(spec.command()) + "\0").toCharArray();
             boolean ok = k.CreateProcessW(null, cmd, null, null, true,
                     Win32.CREATE_UNICODE_ENVIRONMENT | Win32.CREATE_NO_WINDOW, Win32.environmentBlock(env),

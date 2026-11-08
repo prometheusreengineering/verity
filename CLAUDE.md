@@ -53,6 +53,10 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 
 - **Never touch the user's `.minecraft`.** Everything lives under the Verity home (`VerityHome`). Each client gets
   `instances/<profile>/<target>/{game,natives,home}`, and `run.isolateHome` sandboxes HOME/APPDATA/user.home.
+- The game runs the code under test (a pull request's, on CI), so it never inherits Verity's credentials:
+  `GameEnvironment` strips `VERITY_MSA_REFRESH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN` and `ACTIONS_*` in both launchers
+  (`JdkGameProcess`, `Win32HiddenDesktop`). Launch games only through them. The action's `cache: read` restores without
+  saving, for `pull_request_target` runs, whose saves would land in the base branch's caches.
 - Minecraft version ordering uses `McVersion` (numeric), never string compare. Version ranges go through
   `VersionPredicate` (Fabric, Maven/mods.toml and selector syntaxes).
 - Downloads go through `Downloader` (sha1/size verify, mirrors, atomic moves). Small metadata goes through `MetaCache`,

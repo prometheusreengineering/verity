@@ -64,7 +64,10 @@ inputs:
     required: false
     default: ""
   cache:
-    description: Cache Minecraft, loaders, libraries, mods and Java runtimes between workflow runs.
+    description: >
+      Cache Minecraft, loaders, libraries, mods and Java runtimes between workflow runs: "true" restores and saves,
+      "read" only restores (for runs of untrusted code, such as pull_request_target, whose saves would land in the base
+      branch's cache), "false" does neither.
     required: false
     default: "true"
   args:
@@ -119,7 +122,12 @@ runs:
         PROFILE: ${{ inputs.profile }}
         JOB: ${{ inputs.job }}
         PARALLEL: ${{ inputs.parallel }}
+        CACHE: ${{ inputs.cache }}
       run: |
+        if [ "$CACHE" != true ] && [ "$CACHE" != read ] && [ "$CACHE" != false ]; then
+          echo "::error::Unknown cache '$CACHE' (expected true, read or false)."
+          exit 1
+        fi
         targets=
         name=
         if [ -n "$JOB" ]; then
@@ -157,7 +165,7 @@ runs:
     # A prepare job with nothing to do shouldn't download gigabytes to find that out.
     - name: Look for the shared cache
       id: lookup-shared
-      if: inputs.cache == 'true' && steps.key.outputs.mode == 'prepare'
+      if: (inputs.cache == 'true' || inputs.cache == 'read') && steps.key.outputs.mode == 'prepare'
       uses: actions/cache/restore@v4
       with:
         lookup-only: true
@@ -185,7 +193,7 @@ runs:
 
     - name: Look for the OS cache
       id: lookup-os
-      if: inputs.cache == 'true' && steps.key.outputs.mode == 'prepare'
+      if: (inputs.cache == 'true' || inputs.cache == 'read') && steps.key.outputs.mode == 'prepare'
       uses: actions/cache/restore@v4
       with:
         lookup-only: true
@@ -224,7 +232,7 @@ runs:
 
     - name: Restore the shared cache
       id: restore-shared
-      if: inputs.cache == 'true' && steps.state.outputs.skip != 'true' && steps.key.outputs.mode != 'plan'
+      if: (inputs.cache == 'true' || inputs.cache == 'read') && steps.state.outputs.skip != 'true' && steps.key.outputs.mode != 'plan'
       uses: actions/cache/restore@v4
       with:
         enableCrossOsArchive: true
@@ -253,7 +261,7 @@ runs:
 
     - name: Restore the OS cache
       id: restore-os
-      if: inputs.cache == 'true' && steps.state.outputs.skip != 'true' && steps.key.outputs.mode != 'plan'
+      if: (inputs.cache == 'true' || inputs.cache == 'read') && steps.state.outputs.skip != 'true' && steps.key.outputs.mode != 'plan'
       uses: actions/cache/restore@v4
       with:
         key: ${{ steps.key.outputs.os }}

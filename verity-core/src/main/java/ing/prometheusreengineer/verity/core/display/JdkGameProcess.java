@@ -23,6 +23,8 @@ public final class JdkGameProcess implements GameProcess {
                 .redirectErrorStream(true)
                 .redirectOutput(Redirect.appendTo(spec.outputFile().toFile()))
                 .redirectInput(Redirect.PIPE);
+        // The game runs the code under test, which must not see Verity's credentials.
+        pb.environment().keySet().removeIf(GameEnvironment::isSecret);
         pb.environment().putAll(spec.environment());
         Process p = pb.start();
         p.getOutputStream().close();

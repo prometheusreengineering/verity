@@ -268,6 +268,14 @@ It runs the Verity release it was used at: `@v1` takes the newest 1.x.y, `@v1.0.
 restores; set `defender: keep` on self-hosted runners. `.github/workflows/ci.yml` runs Verity's own end-to-end matrix
 with the sample agent and mod (`samples/testmod/verity.json`), and `all-targets.yml` runs every version nightly.
 
+**Untrusted code.** The game runs your mod, so on a pull request it runs the pull request's code. Verity never passes
+its own credentials to the game (`VERITY_MSA_REFRESH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN`, `ACTIONS_*`); the game only
+gets the Minecraft session it plays with. Keep a Microsoft account's token in a GitHub environment with required
+reviewers, not in a repository secret, so every run that uses it waits for approval. To test pull requests from forks
+(which never get secrets through `pull_request`), run them with `pull_request_target`, check out the pull request's
+head, and set `cache: read`: such runs count as the base branch, so `read` restores the caches without letting the
+pull request's code save into the ones the base branch uses (`cache: false` skips restoring too).
+
 Each profile gets two caches per job, renewed weekly: one shared by every OS (assets, versions, installers, mods,
 metadata, libraries) and one for the OS (Java runtimes, native libraries, Mesa and 7-Zip on Windows, Xvfb packages on
 Linux). Verity's home lives in `.verity-home` in the workspace, because a cache only restores across OSes from a

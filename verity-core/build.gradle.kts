@@ -14,3 +14,8 @@ dependencies {
     implementation(libs.jna.platform)
     implementation(project(":verity-api"))
 }
+
+tasks.test {
+    // A credential Verity has in its environment, which the fake games launched by RunOrchestratorTest must not see.
+    environment("VERITY_MSA_REFRESH_TOKEN", "test-refresh-token-must-not-reach-the-game")
+}

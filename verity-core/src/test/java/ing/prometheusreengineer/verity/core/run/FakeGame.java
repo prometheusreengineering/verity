@@ -66,6 +66,14 @@ public class FakeGame {
                 Verity.finish();
                 Thread.sleep(60_000);
             }
+            case "fake-env" -> {
+                // The code under test must not see Verity's credentials (the test task gives Verity a fake one).
+                String leaked = System.getenv("VERITY_MSA_REFRESH_TOKEN");
+                if (leaked == null) Verity.pass("no credentials");
+                else Verity.fail("no credentials", "the game sees VERITY_MSA_REFRESH_TOKEN");
+                Verity.finish();
+                Thread.sleep(60_000);
+            }
             case "fake-idle" -> Thread.sleep(60_000); // vanilla-like: never talks to Verity
             case "fake-nobackend" -> {
                 // 26.3+ with no working renderer: both backends fail, then the game waits on a dialog forever.
