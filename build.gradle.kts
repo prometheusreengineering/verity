@@ -3,7 +3,7 @@ plugins {
 }
 
 allprojects {
-    group = "dev.verity"
+    group = "ing.prometheusreengineer.verity"
     repositories { mavenCentral() }
 }
 

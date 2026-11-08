@@ -1,0 +1,89 @@
+package ing.prometheusreengineer.verity.core.profile;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import ing.prometheusreengineer.verity.core.home.VerityHome;
+import ing.prometheusreengineer.verity.core.meta.LoaderType;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class ProfileStoreTest {
+    @TempDir
+    Path tmp;
+
+    @Test
+    void readsDocumentedFormat() throws Exception {
+        Path f = tmp.resolve("repo/verity.json");
+        Files.createDirectories(f.getParent());
+        Files.writeString(f, """
+                { "name": "essential",
+                  "targets": [ {"minecraft":"1.8.9","loader":"forge","loaderVersion":"recommended"},
+                               {"select":{"minecraft":">=1.20","latestPatchOnly":true,"loaders":["fabric","neoforge"]}} ],
+                  "mods": [ {"path":"build/libs/*.jar"}, {"path":"deps/","match":"auto"}, {"path":"x.jar","loaders":["forge"],"minecraft":"<=1.12.2"} ],
+                  "files": [ {"from":"cfg/options.txt","to":"options.txt"} ],
+                  "jvm": {"memoryMb":3072,"args":["-Dfoo=bar"]},
+                  "display": {"mode":"headless","width":854,"height":480,"softwareGl":"auto"},
+                  "account": {"type":"offline","username":"Tester"},
+                  "test": {"startupTimeoutSec":300,"timeoutSec":600},
+                  "run": {"maxParallel":3,"keepInstances":true} }
+                """);
+        Profile p = ProfileStore.load(f);
+        assertThat(p.targets.get(0).loader).isEqualTo(LoaderType.FORGE);
+        assertThat(p.targets.get(1).select.loaders).containsExactly(LoaderType.FABRIC, LoaderType.NEOFORGE);
+        assertThat(p.mods.get(2).hasRules()).isTrue();
+        assertThat(p.jvm.memoryMb).isEqualTo(3072);
+        assertThat(p.display.mode).isEqualTo(Profile.DisplayMode.HEADLESS);
+        assertThat(p.run.maxParallel).isEqualTo(3);
+        assertThat(p.baseDir()).isEqualTo(f.getParent());
+
+        ProfileStore store = new ProfileStore(new VerityHome(tmp.resolve("home")).ensureCreated());
+        Profile imported = store.importProfile(f);
+        assertThat(imported.mods.get(0).path).isEqualTo(f.getParent().toString().replace('\\', '/') + "/build/libs/*.jar");
+        assertThat(Path.of(imported.mods.get(1).path)).isEqualTo(f.getParent().resolve("deps"));
+        assertThat(ProfileStore.isAbsolute("C:\\mods\\*.jar")).isTrue();
+        assertThat(ProfileStore.isAbsolute("/mods/*.jar")).isTrue();
+        assertThat(ProfileStore.isAbsolute("build/libs/*.jar")).isFalse();
+        assertThat(store.list()).extracting(x -> x.name).containsExactly("essential");
+        assertThat(store.resolve("essential").jvm.args).containsExactly("-Dfoo=bar");
+        assertThat(store.resolve(f.toString()).name).isEqualTo("essential");
+        assertThatThrownBy(() -> store.resolve("missing")).isInstanceOf(ProfileException.class);
+
+        Profile copy = ProfileStore.copy(imported);
+        copy.name = "copy";
+        store.save(copy);
+        assertThat(store.list()).hasSize(2);
+        assertThat(store.delete(copy)).isTrue();
+        assertThat(store.list()).hasSize(1);
+    }
+
+    @Test
+    void modrinthFieldsRoundTrip() throws Exception {
+        Path f = tmp.resolve("m.json");
+        Files.writeString(f, """
+                { "name": "pe",
+                  "targets": [ { "select": { "modrinth": ["essential"], "minecraft": ">=1.8.9" } } ],
+                  "mods": [ { "path": "target/prometheus-*.jar" },
+                            { "modrinth": "essential", "channel": "beta", "version": "1.3.0", "dependencies": false } ],
+                  "run": { "onlyTargetsWithAllMods": true },
+                  "test": { "smokeSec": 180 } }
+                """);
+        Profile p = ProfileStore.load(f);
+        assertThat(p.targets.get(0).select.modrinth).containsExactly("essential");
+        Profile.ModEntry m = p.mods.get(1);
+        assertThat(m.fromModrinth()).isTrue();
+        assertThat(m.label()).isEqualTo("modrinth:essential@1.3.0");
+        assertThat(m.channel).isEqualTo("beta");
+        assertThat(m.dependencies).isFalse();
+        assertThat(p.run.onlyTargetsWithAllMods).isTrue();
+        assertThat(p.test.smokeSec).isEqualTo(180);
+        ing.prometheusreengineer.verity.core.run.RunOrchestrator.validate(p);
+
+        Profile both = ProfileStore.copy(p);
+        both.mods.get(1).path = "x.jar";
+        assertThatThrownBy(() -> ing.prometheusreengineer.verity.core.run.RunOrchestrator.validate(both)).isInstanceOf(ProfileException.class)
+                .hasMessageContaining("exactly one");
+    }
+}

@@ -10,7 +10,7 @@ change is tested on all of them at once.
 `verity-api` is one dependency-free class. Choose one option:
 
 **A. Vendor it (simplest with Maven).** Copy
-[`Verity.java`](../verity-api/src/main/java/dev/verity/api/Verity.java) into your sources under your own package
+[`Verity.java`](../verity-api/src/main/java/ing/prometheusreengineer/verity/api/Verity.java) into your sources under your own package
 (for example `studio.dreamys.prometheus.verity.Verity`). Nothing else changes.
 
 **B. Shade it.** Each release deploys `verity-api` to `https://maven.prometheusreengineer.ing/`, which needs no token
@@ -23,7 +23,7 @@ change is tested on all of them at once.
 </repository>
 ...
 <dependency>
-  <groupId>dev.verity</groupId>
+  <groupId>ing.prometheusreengineer.verity</groupId>
   <artifactId>verity-api</artifactId>
   <version>0.1.0</version>
 </dependency>
@@ -37,10 +37,10 @@ change is tested on all of them at once.
       <phase>package</phase>
       <goals><goal>shade</goal></goals>
       <configuration>
-        <artifactSet><includes><include>dev.verity:verity-api</include></includes></artifactSet>
+        <artifactSet><includes><include>ing.prometheusreengineer.verity:verity-api</include></includes></artifactSet>
         <relocations>
           <relocation>
-            <pattern>dev.verity.api</pattern>
+            <pattern>ing.prometheusreengineer.verity.api</pattern>
             <shadedPattern>studio.dreamys.prometheus.shadow.verity</shadedPattern>
           </relocation>
         </relocations>

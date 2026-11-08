@@ -32,11 +32,11 @@ tasks.shadowJar {
     archiveBaseName.set("verity-testmod")
     archiveClassifier.set("")
     // Relocate so several mods can each shade verity-api without clashing on Forge/NeoForge's module layer.
-    relocate("dev.verity.api", "dev.verity.sample.shadow.api")
+    relocate("ing.prometheusreengineer.verity.api", "ing.prometheusreengineer.verity.sample.shadow.api")
     manifest {
         attributes(
             "Implementation-Version" to project.version,
-            "Automatic-Module-Name" to "dev.verity.sample",
+            "Automatic-Module-Name" to "ing.prometheusreengineer.verity.sample",
         )
     }
 }

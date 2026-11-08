@@ -117,7 +117,7 @@ loader classes, so it behaves the same everywhere. When the game wasn't started 
 so you can leave the calls in release builds.
 
 ```java
-import dev.verity.api.Verity;
+import ing.prometheusreengineer.verity.api.Verity;
 
 // e.g. at the end of your initialization, or once your universal adapter has resolved the game classes
 Verity.test("adapter resolves Minecraft classes", () -> {

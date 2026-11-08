@@ -14,7 +14,7 @@ tasks.shadowJar {
     archiveBaseName.set("verity-cli")
     archiveClassifier.set("all")
     manifest {
-        attributes["Main-Class"] = "dev.verity.cli.VerityCli"
+        attributes["Main-Class"] = "ing.prometheusreengineer.verity.cli.VerityCli"
         attributes["Implementation-Version"] = project.version
         attributes["Enable-Native-Access"] = "ALL-UNNAMED"
     }

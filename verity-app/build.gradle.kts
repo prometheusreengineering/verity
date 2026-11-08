@@ -18,7 +18,7 @@ dependencies {
 
 application {
     applicationName = "verity"
-    mainClass.set("dev.verity.app.Main")
+    mainClass.set("ing.prometheusreengineer.verity.app.Main")
     applicationDefaultJvmArgs = listOf("-Xmx512m", "--enable-native-access=ALL-UNNAMED")
 }
 
@@ -34,7 +34,7 @@ tasks.shadowJar {
     archiveBaseName.set("verity")
     archiveClassifier.set(osName)
     manifest {
-        attributes["Main-Class"] = "dev.verity.app.Main"
+        attributes["Main-Class"] = "ing.prometheusreengineer.verity.app.Main"
         attributes["Implementation-Version"] = project.version
         attributes["Enable-Native-Access"] = "ALL-UNNAMED"
     }
@@ -60,7 +60,7 @@ val jpackageImage by tasks.registering(Exec::class) {
             "--app-version", project.version.toString().substringBefore("-"),
             "--input", jar.get().asFile.parent,
             "--main-jar", jar.get().asFile.name,
-            "--main-class", "dev.verity.app.Main",
+            "--main-class", "ing.prometheusreengineer.verity.app.Main",
             "--java-options", "-Xmx512m",
             "--dest", out.get().asFile.absolutePath,
         )
