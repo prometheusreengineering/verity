@@ -23,8 +23,6 @@ on:
 
 permissions:
   contents: read
-  # Plan mode reads earlier runs' timings.
-  actions: read
 
 concurrency:
   group: all-targets
@@ -57,6 +55,10 @@ jobs:
     name: Plan
     needs: build
     runs-on: ubuntu-latest
+    # Only planning reads earlier runs' timings. A job's permissions replace the workflow's.
+    permissions:
+      contents: read
+      actions: read
     outputs:
       shards: ${{ steps.plan.outputs.shards }}
     steps:

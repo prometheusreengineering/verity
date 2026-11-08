@@ -22,8 +22,6 @@ on:
 
 permissions:
   contents: read
-  # Plan mode reads earlier runs' timings and the cache list.
-  actions: read
 
 jobs:
   build:
@@ -67,6 +65,10 @@ jobs:
     needs: build
     if: ${{ !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.e2e) }}
     runs-on: ubuntu-latest
+    # Only planning reads earlier runs' timings and the cache list. A job's permissions replace the workflow's.
+    permissions:
+      contents: read
+      actions: read
     outputs:
       prepare: ${{ steps.plan.outputs.prepare }}
       shards: ${{ steps.plan.outputs.shards }}

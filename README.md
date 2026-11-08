@@ -328,16 +328,18 @@ saves at least `knee-seconds`), how to split the runners between the OSes so the
 runner gets, and how to group the caches. Targets are cached in groups of neighbouring Minecraft versions, and each
 runner restores only its group's caches instead of the whole profile's. Missing caches are filled by one prepare job
 per group and OS, all at once. The plan learns from the last finished run of the same workflow, so a slow mod gets more
-runners; it needs `actions: read` for that and to see which caches exist.
+runners; the plan job needs `actions: read` for that and to see which caches exist. No other job needs it.
 
 ```yaml
 permissions:
   contents: read
-  actions: read
 
 jobs:
   plan:
     runs-on: ubuntu-latest
+    permissions:          # replaces the workflow's permissions for this job
+      contents: read
+      actions: read
     outputs:
       prepare: ${{ steps.plan.outputs.prepare }}
       shards: ${{ steps.plan.outputs.shards }}
