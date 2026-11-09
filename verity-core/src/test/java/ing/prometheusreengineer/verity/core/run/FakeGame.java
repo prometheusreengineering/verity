@@ -71,6 +71,17 @@ public class FakeGame {
                 String leaked = System.getenv("VERITY_MSA_REFRESH_TOKEN");
                 if (leaked == null) Verity.pass("no credentials");
                 else Verity.fail("no credentials", "the game sees VERITY_MSA_REFRESH_TOKEN");
+                // Per-user data folders a mod might write to all point into the sandboxed home.
+                boolean windows = System.getProperty("os.name").startsWith("Windows");
+                java.nio.file.Path sandbox = java.nio.file.Path.of(System.getProperty("user.home"));
+                java.util.List<String> outside = new java.util.ArrayList<>();
+                for (String name : windows ? new String[] {"APPDATA", "LOCALAPPDATA"}
+                        : new String[] {"HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}) {
+                    String value = System.getenv(name);
+                    if (value == null || !java.nio.file.Path.of(value).startsWith(sandbox)) outside.add(name + "=" + value);
+                }
+                if (outside.isEmpty()) Verity.pass("sandboxed folders");
+                else Verity.fail("sandboxed folders", "outside " + sandbox + ": " + outside);
                 Verity.finish();
                 Thread.sleep(60_000);
             }

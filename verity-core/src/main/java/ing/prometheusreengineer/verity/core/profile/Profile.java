@@ -254,7 +254,7 @@ public class Profile {
         public int maxParallel;
         /** Keep instance folders (worlds, configs) between runs instead of starting fresh. */
         public boolean keepInstances;
-        /** Point HOME/APPDATA/user.home into the instance so mods cannot touch the real user profile. */
+        /** Point user.home and the per-user folder variables (HOME, XDG_*_HOME, APPDATA, LOCALAPPDATA) into the instance. */
         public boolean isolateHome = true;
         /** Skip (instead of run) targets where some enabled mod entry has no file for that version/loader. */
         public boolean onlyTargetsWithAllMods;

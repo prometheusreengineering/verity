@@ -102,7 +102,7 @@ Profiles are JSON files. `verity profile new` and `import` store them in `<home>
 | `run.onlyTargetsWithAllMods` | Skip targets where some mod entry has no file. Skipped targets don't fail the run |
 | `run.maxParallel` | Clients at once. `0` = automatic: half the CPU cores, limited by memory |
 | `run.keepInstances` | Keep worlds/configs between runs instead of starting each client fresh |
-| `run.isolateHome` | Point `user.home`, `HOME`/`APPDATA` into the instance |
+| `run.isolateHome` | Point `user.home` and the per-user folders (`HOME` and `XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`XDG_CACHE_HOME`/`XDG_STATE_HOME`, or `APPDATA`/`LOCALAPPDATA`) into the instance |
 
 Every target is one client: `1.20.1-fabric` → `<home>/instances/<profile>/1.20.1-fabric/game` is its game directory.
 

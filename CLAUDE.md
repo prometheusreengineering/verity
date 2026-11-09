@@ -52,7 +52,8 @@ headless or windowed, to test version/loader-independent mods. The mod reports r
 ## Conventions and gotchas
 
 - **Never touch the user's `.minecraft`.** Everything lives under the Verity home (`VerityHome`). Each client gets
-  `instances/<profile>/<target>/{game,natives,home}`, and `run.isolateHome` sandboxes HOME/APPDATA/user.home.
+  `instances/<profile>/<target>/{game,natives,home}`, and `run.isolateHome` points user.home and every per-user folder
+  variable into `home` (HOME and XDG_DATA/CONFIG/CACHE/STATE_HOME, or APPDATA and LOCALAPPDATA); mods use them too.
 - The game runs the code under test (a pull request's, on CI), so it never inherits Verity's credentials:
   `GameEnvironment` strips `VERITY_MSA_REFRESH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN` and `ACTIONS_*` in both launchers
   (`JdkGameProcess`, `Win32HiddenDesktop`). Launch games only through them. The action's `cache: read` restores without

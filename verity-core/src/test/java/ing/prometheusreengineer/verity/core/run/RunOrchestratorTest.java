@@ -314,7 +314,7 @@ class RunOrchestratorTest {
     }
 
     @Test
-    void theGameDoesNotInheritVerityCredentials() throws Exception {
+    void theGameGetsNoCredentialsAndOnlySandboxedFolders() throws Exception {
         // The test task puts a VERITY_MSA_REFRESH_TOKEN into this JVM's environment; the game runs the code under test.
         assertThat(System.getenv("VERITY_MSA_REFRESH_TOKEN")).as("set by the test task").isNotNull();
         VerityHome home = new VerityHome(tmp.resolve("home")).ensureCreated();
@@ -327,7 +327,7 @@ class RunOrchestratorTest {
 
         TargetResult r = report.results.get(0);
         assertThat(r.status).as(r.message).isEqualTo(Status.PASSED);
-        assertThat(r.checks).extracting(CheckResult::name).containsExactly("no credentials");
+        assertThat(r.checks).extracting(CheckResult::name).containsExactly("no credentials", "sandboxed folders");
     }
 
     @Test

@@ -443,10 +443,11 @@ public final class ClientSession {
     }
 
     private static void sandboxEnvironment(Map<String, String> env, Path home) throws IOException {
+        // Mods find per-user folders through these too (Essential keeps global data in $XDG_DATA_HOME or %APPDATA%).
+        Map<String, Path> dirs = new LinkedHashMap<>();
         if (Os.current() == Os.WINDOWS) {
-            Path roaming = home.resolve("AppData").resolve("Roaming");
-            Files.createDirectories(roaming);
-            env.put("APPDATA", roaming.toString());
+            dirs.put("APPDATA", home.resolve("AppData").resolve("Roaming"));
+            dirs.put("LOCALAPPDATA", home.resolve("AppData").resolve("Local"));
         } else {
             String realHome = System.getProperty("user.home");
             if (System.getenv("XAUTHORITY") == null && realHome != null) {
@@ -454,6 +455,14 @@ public final class ClientSession {
                 if (Files.exists(xauth)) env.put("XAUTHORITY", xauth.toString());
             }
             env.put("HOME", home.toString());
+            dirs.put("XDG_DATA_HOME", home.resolve(".local").resolve("share"));
+            dirs.put("XDG_CONFIG_HOME", home.resolve(".config"));
+            dirs.put("XDG_CACHE_HOME", home.resolve(".cache"));
+            dirs.put("XDG_STATE_HOME", home.resolve(".local").resolve("state"));
+        }
+        for (Map.Entry<String, Path> e : dirs.entrySet()) {
+            Files.createDirectories(e.getValue());
+            env.put(e.getKey(), e.getValue().toString());
         }
     }
 
